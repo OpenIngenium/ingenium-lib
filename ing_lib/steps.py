@@ -112,7 +112,7 @@ def apply_bit_mask(input_value, bit_mask, bit_op):
     return int(output_value)
 
 
-def check_telemetry_query(query: dict) -> None:
+def check_telemetry_query(query: list) -> None:
     """
     This function checks the provided telemetry query to ensure it is well formed
 
@@ -122,7 +122,8 @@ def check_telemetry_query(query: dict) -> None:
         This is dictionary indexed by channel id with the provide
 
         Example:
-                { 'CMD-1234' : {'verify_wait' : 'WAIT',
+                        {'telem_uuid' : 'CMD-3232',
+                        'verify_wait' : 'WAIT',
                         'dn_eu': 'DN',
                         'verification_condition': 'GREATER_THAN',
                         'verification_values': ['12'],
@@ -134,7 +135,7 @@ def check_telemetry_query(query: dict) -> None:
 
     """
 
-    for channel, predict in query.items():
+    for predict in query:
 
         # Check the Verification Condition and Verification Values
 
@@ -357,14 +358,14 @@ def verify_wait_telemetry(query: dict, telemetry_query_func: callable, start_tim
     return results
 
 
-def evaluate_verify_condition(channels, channel_id, predicts, query_timeout):
+def evaluate_verify_condition(telemetry, telem_uuid, predicts, query_timeout):
     """
     This function will apply the bit mask (if appropriate) and evaluate the results based on the predicts
     Parameters
     ----------
-    channels: list
+    telemetry: list
         List of channel objects. The last element is the latest.
-    channel_id: str
+    telem_uuid: str
         Channel id that is being evaluated
     predicts: dict
         A dictionary containing bit-masking information and predicts to evaluate against
@@ -376,157 +377,161 @@ def evaluate_verify_condition(channels, channel_id, predicts, query_timeout):
         Dictionary containing the results
     """
 
+    # Debug: Log function entry and inputs
+    logger.debug(f"evaluate_verify_condition called for {telem_uuid} with verification_condition: {predicts.get('verification_condition')}")
+    logger.debug(f"query_timeout: {query_timeout}, telemetry present: {bool(telemetry)}")
+
     # Create a dictionary to captures the results (starting with the predicts)
-    result = {'channel_id': channel_id,
+    result = {'telem_uuid': telem_uuid,
               'predicts': predicts,
               'actual_value': None,
               'verification_status': None,
-              'channel_details': None}
+              'data_present': False,
+              'telem_details': None}
 
     verification_condition = predicts['verification_condition']
     verification_values = predicts.get('verification_values')
     prior_value = predicts.get('prior_value')
 
-    # Check if no EHA values have been returned
-    if not channels:
+    # Check if no telem values have been returned
+    if not telemetry:
+        # Debug: Log the no-telemetry case
+        logger.debug(f"No telemetry found for {telem_uuid}, query_timeout: {query_timeout}")
+
         # Check if the query is complete (timed out) and the verification type is NOT_PRESENT
         if query_timeout and verification_condition == 'NOT_PRESENT':
             # If so - verification_status = 'PASS'
             result['verification_status'] = 'PASS'
-            msg = f'Channel:{channel_id} not located within time range. Verification Type: {predicts["verification_condition"]} Result: {result["verification_status"]}'
+            msg = f'Channel:{telem_uuid} not located within time range. Verification Type: {predicts["verification_condition"]} Result: {result["verification_status"]}'
             logger.info(msg)
             return result
 
         # If the verification type is not NOT_PRESENT the verification is FAIL
         elif query_timeout and verification_condition != 'NOT_PRESENT':
             result['verification_status'] = 'FAIL'
-            msg = f'Channel:{channel_id} not located within time range. Verification Type: {predicts["verification_condition"]} Result: {result["verification_status"]}'
+            msg = f'Channel:{telem_uuid} not located within time range. Verification Type: {predicts["verification_condition"]} Result: {result["verification_status"]}'
             logger.info(msg)
             return result
-
-    # If EHA values received - time to process them
-    else:
-        # Take the most recent value and add it to the results
-        channel = channels[0]
-        result['channel_details'] = channel
-
-        # Check that the channel type is compatible with the verification values, the prior values, etc
-        # check_channel_type(channel, predicts)
-
-        # If the predict is targeting DN - set the evaluation value to that
-        if predicts['dn_eu'] == 'DN':
-            result['actual_value'] = channel.get('dn')
-
-        # If the predict is targeting EU
-        elif predicts['dn_eu'] == 'EU':
-            # If the channel is enumerated or boolean and EU is selected - use the status value
-            if channel.get('channelType') in ['STATUS', 'BOOLEAN']:
-                # Status values are always strings
-                result['actual_value'] = channel.get('status')
-            # Otherwise use the EU value
-            else:
-                # EU values are always floats
-                result['actual_value'] = channel.get('eu')
-
-            #####################
-        # If there is a bit mask present apply it
-        if predicts.get('bit_mask') and predicts.get('bit_op'):
-            msg = f'Applying bit_mask: {predicts.get("bit_mask")} bit_op: {predicts.get("bit_op")} to channel_id: {channel_id} (DN: {channel.get("dn")})'
-            logger.debug(msg)
-
-            # Try applying the bit mask
-            try:
-                masked_value = apply_bit_mask(channel.get('dn'), predicts['bit_mask'], predicts['bit_op'])
-            except BitMaskError:
-                msg = f'Error applying specified bit-mask: {predicts.get("bit_mask")}, bit-op: {predicts.get("bit_op")}, to channel: {channel_id}, value: {channel.get("eu")}'
-                logger.error(msg)
-                raise InputError(msg)
-
-            # Set the evaluation value to the masked value
-            result['actual_value'] = masked_value
-
-        # Check if a prior value was provided
-        # If so compute revised actual_value based on actual_value - prior_value
-        if prior_value is not None:
-            old_actual_value = result['actual_value']
-            result['actual_value'] = old_actual_value - prior_value
-            msg = f'Will evaluate based on the difference between measured value and prior value ({old_actual_value} - {prior_value} = {result["actual_value"]})'
-            logger.debug(msg)
-
-        # Now evaluate the actual_value against the provided predicts
-        # Record is a special case (no predict)
-        if verification_condition == 'RECORD':
-            result['verification_status'] = 'PASS'
-            msg = f'Found value for {channel_id}: {result["actual_value"]} (RECORD - no evaluation) - setting verification status to {result["verification_status"]}'
-            logger.debug(msg)
+        # If no timeout yet, return PENDING status
+        else:
+            result['verification_status'] = 'PENDING'
             return result
 
-        # NOT_PRESENT is a special case (if telemetry was received)
-        if verification_condition == 'NOT_PRESENT':
-            result['verification_status'] = 'FAIL'
-            msg = f'Found value for {channel_id}: {result["actual_value"]} (NOT PRESENT - but telemetry present) - setting verification status to {result["verification_status"]}'
-            logger.debug(msg)
-            return result
+    # If we get here, telemetry was found
+    telem = telemetry[0]
+    result['telem_details'] = telem
+    result['data_present'] = True
 
-        # Otherwise is follows a standard pattern
-        if verification_condition == 'GREATER_THAN':
-            operator = '>'
-            if result['actual_value'] > verification_values[0]:
-                result['verification_status'] = 'PASS'
-            else:
-                result['verification_status'] = 'FAIL'
+    # Debug: Log that we found telemetry
+    logger.debug(f"Found telemetry for {telem_uuid}: {telem}")
 
-        elif verification_condition == 'LESS_THAN':
-            operator = '<'
-            if result['actual_value'] < verification_values[0]:
-                result['verification_status'] = 'PASS'
-            else:
-                result['verification_status'] = 'FAIL'
+    # If the predict is targeting DN - set the evaluation value to that
+    if predicts['dn_eu'] == 'DN':
+        result['actual_value'] = telem.get('raw_value')
 
-        elif verification_condition == 'GREATER_THAN_OR_EQUAL':
-            operator = '>='
-            if result['actual_value'] >= verification_values[0]:
-                result['verification_status'] = 'PASS'
-            else:
-                result['verification_status'] = 'FAIL'
+    # If the predict is targeting EU
+    elif predicts['dn_eu'] == 'EU':
+        result['actual_value'] = telem.get('eng_value')
 
-        elif verification_condition == 'LESS_THAN_OR_EQUAL':
-            operator = '<='
-            if result['actual_value'] <= verification_values[0]:
-                result['verification_status'] = 'PASS'
-            else:
-                result['verification_status'] = 'FAIL'
-
-        elif verification_condition == 'EQUAL':
-            operator = '=='
-            if result['actual_value'] == verification_values[0]:
-                result['verification_status'] = 'PASS'
-            else:
-                result['verification_status'] = 'FAIL'
-
-        elif verification_condition == 'NOT_EQUAL':
-            operator = '!='
-            if result['actual_value'] != verification_values[0]:
-                result['verification_status'] = 'PASS'
-            else:
-                result['verification_status'] = 'FAIL'
-
-        elif verification_condition == 'INCLUSIVE_RANGE':
-            operator = 'Inclusive Range'
-            if result['actual_value'] >= verification_values[0] and result['actual_value'] <= verification_values[1]:
-                result['verification_status'] = 'PASS'
-            else:
-                result['verification_status'] = 'FAIL'
-
-        elif verification_condition == 'EXCLUSIVE_RANGE':
-            operator = 'Exclusive Range'
-            if result['actual_value'] > verification_values[0] and result['actual_value'] < verification_values[1]:
-                result['verification_status'] = 'PASS'
-            else:
-                result['verification_status'] = 'FAIL'
-
-        msg = f'Evaluated predict for {channel_id} {result["actual_value"]} {operator} {verification_values} - setting verification status to {result["verification_status"]}'
+    # Handle NOT_PRESENT case when telemetry is found
+    if verification_condition == 'NOT_PRESENT':
+        result['verification_status'] = 'FAIL'
+        msg = (f'Channel:{telem_uuid} was found with value {result["actual_value"]} when NOT_PRESENT was expected. '
+               f'Verification Status: FAIL')
         logger.info(msg)
+        return result
+
+    # If there is a bit mask present apply it
+    if predicts.get('bit_mask') and predicts.get('bit_op'):
+        msg = f'Applying bit_mask: {predicts.get("bit_mask")} bit_op: {predicts.get("bit_op")} to channel_id: {telem_uuid} (DN: {telem.get("raw_value")})'
+        logger.debug(msg)
+
+        # Try applying the bit mask
+        try:
+            masked_value = apply_bit_mask(telem.get('raw_value'), predicts['bit_mask'], predicts['bit_op'])
+        except BitMaskError:
+            msg = f'Error applying specified bit-mask: {predicts.get("bit_mask")}, bit-op: {predicts.get("bit_op")}, to channel: {telem_uuid}, value: {telem.get("eng_value")}'
+            logger.error(msg)
+            raise InputError(msg)
+
+        # Set the evaluation value to the masked value
+        result['actual_value'] = masked_value
+
+    # Check if a prior value was provided
+    # If so compute revised actual_value based on actual_value - prior_value
+    if prior_value is not None:
+        old_actual_value = result['actual_value']
+        result['actual_value'] = old_actual_value - prior_value
+        msg = f'Will evaluate based on the difference between measured value and prior value ({old_actual_value} - {prior_value} = {result["actual_value"]})'
+        logger.debug(msg)
+
+    # Now evaluate the actual_value against the provided predicts
+    # Record is a special case (no predict)
+    if verification_condition == 'RECORD':
+        result['verification_status'] = 'PASS'
+        msg = f'Found value for {telem_uuid}: {result["actual_value"]} (RECORD - no evaluation) - setting verification status to {result["verification_status"]}'
+        logger.info(msg)
+        return result
+
+    # Otherwise is follows a standard pattern
+    if verification_condition == 'GREATER_THAN':
+        operator = '>'
+        if result['actual_value'] > float(verification_values[0]):
+            result['verification_status'] = 'PASS'
+        else:
+            result['verification_status'] = 'FAIL'
+
+    elif verification_condition == 'LESS_THAN':
+        operator = '<'
+        if result['actual_value'] < float(verification_values[0]):
+            result['verification_status'] = 'PASS'
+        else:
+            result['verification_status'] = 'FAIL'
+
+    elif verification_condition == 'GREATER_THAN_OR_EQUAL':
+        operator = '>='
+        if result['actual_value'] >= float(verification_values[0]):
+            result['verification_status'] = 'PASS'
+        else:
+            result['verification_status'] = 'FAIL'
+
+    elif verification_condition == 'LESS_THAN_OR_EQUAL':
+        operator = '<='
+        if result['actual_value'] <= float(verification_values[0]):
+            result['verification_status'] = 'PASS'
+        else:
+            result['verification_status'] = 'FAIL'
+
+    elif verification_condition == 'EQUAL':
+        operator = '=='
+        if result['actual_value'] == verification_values[0]:
+            result['verification_status'] = 'PASS'
+        else:
+            result['verification_status'] = 'FAIL'
+
+    elif verification_condition == 'NOT_EQUAL':
+        operator = '!='
+        if result['actual_value'] != verification_values[0]:
+            result['verification_status'] = 'PASS'
+        else:
+            result['verification_status'] = 'FAIL'
+
+    elif verification_condition == 'INCLUSIVE_RANGE':
+        operator = 'Inclusive Range'
+        if result['actual_value'] >= float(verification_values[0]) and result['actual_value'] <= float(verification_values[1]):
+            result['verification_status'] = 'PASS'
+        else:
+            result['verification_status'] = 'FAIL'
+
+    elif verification_condition == 'EXCLUSIVE_RANGE':
+        operator = 'Exclusive Range'
+        if result['actual_value'] > float(verification_values[0]) and result['actual_value'] < (verification_values[1]):
+            result['verification_status'] = 'PASS'
+        else:
+            result['verification_status'] = 'FAIL'
+
+    msg = f'Evaluated predict for {telem_uuid} {result["actual_value"]} {operator} {verification_values} - setting verification status to {result["verification_status"]}'
+    logger.info(msg)
     return result
 
 
