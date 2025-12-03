@@ -538,7 +538,7 @@ def parse_custom_script_xml(xml_file, base_path):
         
         script_elem = script_elements[0]
         script_name = script_elem.get("script_name")
-        is_command = script_elem.get('is_command')
+        is_command = script_elem.get('is_command', 'false').lower() == 'true'  # Default to false if not provided
         script_path = script_elem.get("script_path")
         description = script_elem.get("description")
         hash_value = script_elem.get("hash")  # Get hash from XML if provided
@@ -763,7 +763,7 @@ def parse_custom_script_json(json_file, base_path):
 
 def validate_script_data(script_data):
     """
-    Validate that a script data dictionary has all required fields
+    Validate that a script data dictionary has all required fields and valid values
     
     Parameters
     ----------
@@ -779,6 +779,7 @@ def validate_script_data(script_data):
 
     required_fields = ['script_name', 'script_path', 'description', 'script_id', 'is_command']
 
+    # Check for missing required fields
     for field in required_fields:
         if not script_data.get(field):
             logger.error(f"Script data missing required field: {field}")
