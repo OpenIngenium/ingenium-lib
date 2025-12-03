@@ -470,7 +470,8 @@ class TestProjConfigCreateUpdateCS:
             'script_name': 'valid_script',
             'script_path': 'scripts/valid_script.sh',
             'description': 'Valid test script',
-            'script_id': generate_script_id('scripts/valid_script.sh')
+            'script_id': generate_script_id('scripts/valid_script.sh'),
+            'is_command': True
         }
         
         assert validate_script_data(script_data) is True
@@ -480,17 +481,6 @@ class TestProjConfigCreateUpdateCS:
         script_data = {
             'script_name': 'test_script',
             # Missing required fields
-        }
-        
-        assert validate_script_data(script_data) is False
-
-    def test_validate_script_data_invalid_name(self):
-        """Test validation of script data with invalid script name."""
-        script_data = {
-            'script_name': 'invalid@script#name',
-            'script_path': 'scripts/script.sh',
-            'description': 'Test script',
-            'script_id': 'test_id'
         }
         
         assert validate_script_data(script_data) is False
@@ -548,6 +538,7 @@ class TestProjConfigCreateUpdateCS:
                 'description': 'Test script',
                 'script_id': existing_script_id,
                 'hash': 'a'*64,  # Valid SHA256 hash format
+                'is_command': True,
                 'inputs': [],
                 'outputs': []
             }

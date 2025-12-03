@@ -7,6 +7,7 @@ import tempfile
 import json
 import os
 from unittest.mock import patch, MagicMock
+from datetime import datetime
 
 # Test constants
 MOCK_INGENIUM_SERVER = "https://mock-ingenium-server.example.com"
@@ -21,9 +22,18 @@ class TestIngLibIntegration:
         from apps.ProjConfigBackup import get_source_dictionaries
         from apps.ProjConfigRestore import restore_dictionaries
         
-        # Test backup
+        # Create a mock inputs object with required attributes
+        class MockInputs:
+            def __init__(self):
+                self.flight_sse = None
+                self.filter_retired = False
+                self.specific_versions = None
+                self.include_vis = True
+                self.include_cs = True
+        
+        # Test backup with mock inputs
         backup_data = get_source_dictionaries(
-            MOCK_INGENIUM_SERVER, 'v4', True
+            MOCK_INGENIUM_SERVER, 'v4', MockInputs()
         )
         
         # Verify backup structure
@@ -111,8 +121,8 @@ class TestIngLibIntegration:
             mock_delete_response   # Fourth delete succeeds
         ]
         
-        # Mock common.token to avoid authentication issues
-        with patch('common.token', 'Bearer mock_token'), \
+        # Mock common._store to avoid authentication issues
+        with patch('common._store', {'token': 'Bearer mock_token', 'ssl_verify': True, 'refresh_time': datetime.utcnow()}), \
              patch('common.ssl_verify', True):
             
             # Should not raise exception despite internal failures

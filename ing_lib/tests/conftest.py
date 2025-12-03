@@ -34,9 +34,7 @@ def mock_ssl_verify():
 @pytest.fixture
 def mock_common_globals():
     """Mock common module global variables."""
-    with patch('common.ssl_verify', True), \
-         patch('common.token', 'mock_token_12345'), \
-         patch('common.refresh_time', datetime.datetime.utcnow()), \
+    with patch('common._store', {'token': 'mock_token_12345', 'ssl_verify': True, 'refresh_time': datetime.datetime.utcnow()}), \
          patch('common.refresh_auth', return_value=True):
         yield
 
@@ -187,8 +185,7 @@ def mock_empty_server():
     with contextlib.ExitStack() as stack:
         # Authentication and globals
         stack.enter_context(patch('common.authenticate', return_value=True))
-        stack.enter_context(patch('common.ssl_verify', True))
-        stack.enter_context(patch('common.token', 'mock_token_12345'))
+        stack.enter_context(patch('common._store', {'token': 'mock_token_12345', 'ssl_verify': True, 'refresh_time': datetime.datetime.utcnow()}))
         
         # GET functions - return empty data
         stack.enter_context(patch('project_config.get_dictionary_versions', return_value=[]))
@@ -374,7 +371,8 @@ echo "status=SUCCESS" >> output.txt
                    script_path="test_script.sh" 
                    description="Comprehensive test script with all field types"
                    hash="abc123def456"
-                   script_id="dGVzdF9zY3JpcHQuc2g=">
+                   script_id="dGVzdF9zY3JpcHQuc2g="
+                   is_command="true">
         
         <!-- Input fields covering all types -->
         <input_field name="integer_param" 
