@@ -335,23 +335,25 @@ def verify_wait_telemetry(query: dict, telemetry_query_func: callable, start_tim
 
         # Check if the query has completed
         for channel_id, data in results['channels'].items():
+            # Get the predict data from the original query
+            predict = query[channel_id]
+            
             # If the verification_condition = NOT_PRESENT only exit on FAIL
             # Note that this also means that query_timeout = True
-            if data['predicts']['verification_condition'] in ['NOT_PRESENT']:
+            if predict['verification_condition'] in ['NOT_PRESENT']:
                 if data['verification_status'] not in ['PASS', 'ERROR']:
                     query_complete = False
                     results['query_matches_predict'] = False
 
             else:
                 # If Waiting - mark the query complete if the status equals PASS or ERROR
-                if data['predicts']['verify_wait'] == 'WAIT':
+                if predict['verify_wait'] == 'WAIT':
                     if data['verification_status'] in ['FAIL']:
                         query_complete = False
                         results['query_matches_predict'] = False
 
-
                 # If not waiting - the query is already flagged complete
-                elif data['predicts']['verify_wait'] == 'VERIFY':
+                elif predict['verify_wait'] == 'VERIFY':
                     if data['verification_status'] in ['FAIL', 'ERROR']:
                         results['query_matches_predict'] = False
 
@@ -460,8 +462,8 @@ def evaluate_verify_condition(telemetry, telem_uuid, predicts, query_timeout):
     # Check if a prior value was provided
     # If so compute revised actual_value based on actual_value - prior_value
     if prior_value is not None:
-        old_actual_value = result['actual_value']
-        result['actual_value'] = old_actual_value - prior_value
+        old_actual_value = float(result['actual_value'])
+        result['actual_value'] = old_actual_value - float(prior_value)
         msg = f'Will evaluate based on the difference between measured value and prior value ({old_actual_value} - {prior_value} = {result["actual_value"]})'
         logger.debug(msg)
 
@@ -476,56 +478,72 @@ def evaluate_verify_condition(telemetry, telem_uuid, predicts, query_timeout):
     # Otherwise is follows a standard pattern
     if verification_condition == 'GREATER_THAN':
         operator = '>'
-        if result['actual_value'] > float(verification_values[0]):
+        if float(result['actual_value']) > float(verification_values[0]):
             result['verification_status'] = 'PASS'
         else:
             result['verification_status'] = 'FAIL'
 
     elif verification_condition == 'LESS_THAN':
         operator = '<'
-        if result['actual_value'] < float(verification_values[0]):
+        if float(result['actual_value']) < float(verification_values[0]):
             result['verification_status'] = 'PASS'
         else:
             result['verification_status'] = 'FAIL'
 
     elif verification_condition == 'GREATER_THAN_OR_EQUAL':
         operator = '>='
-        if result['actual_value'] >= float(verification_values[0]):
+        if float(result['actual_value']) >= float(verification_values[0]):
             result['verification_status'] = 'PASS'
         else:
             result['verification_status'] = 'FAIL'
 
     elif verification_condition == 'LESS_THAN_OR_EQUAL':
         operator = '<='
-        if result['actual_value'] <= float(verification_values[0]):
+        if float(result['actual_value']) <= float(verification_values[0]):
             result['verification_status'] = 'PASS'
         else:
             result['verification_status'] = 'FAIL'
 
     elif verification_condition == 'EQUAL':
         operator = '=='
-        if result['actual_value'] == verification_values[0]:
-            result['verification_status'] = 'PASS'
+        # The telemetry or predict could be a string for equal - so we will need to check
+        if confirm_numeric(verification_values[0]):
+            # If numeric convert both to floats when evaluating
+            if float(result['actual_value']) == float(verification_values[0]):
+                result['verification_status'] = 'PASS'
+            else:
+                result['verification_status'] = 'FAIL'
         else:
-            result['verification_status'] = 'FAIL'
+            if result['actual_value'] == verification_values[0]:
+                result['verification_status'] = 'PASS'
+            else:
+                result['verification_status'] = 'FAIL'
 
     elif verification_condition == 'NOT_EQUAL':
         operator = '!='
-        if result['actual_value'] != verification_values[0]:
-            result['verification_status'] = 'PASS'
+        # The telemetry or predict could be a string for equal - so we will need to check
+        if confirm_numeric(verification_values[0]):
+            # If numeric convert both to floats when evaluating
+            if float(result['actual_value']) != float(verification_values[0]):
+                result['verification_status'] = 'PASS'
+            else:
+                result['verification_status'] = 'FAIL'
         else:
-            result['verification_status'] = 'FAIL'
+            if result['actual_value'] != verification_values[0]:
+                result['verification_status'] = 'PASS'
+            else:
+                result['verification_status'] = 'FAIL'
 
     elif verification_condition == 'INCLUSIVE_RANGE':
         operator = 'Inclusive Range'
-        if result['actual_value'] >= float(verification_values[0]) and result['actual_value'] <= float(verification_values[1]):
+        if float(result['actual_value']) >= float(verification_values[0]) and float(result['actual_value']) <= float(verification_values[1]):
             result['verification_status'] = 'PASS'
         else:
             result['verification_status'] = 'FAIL'
 
     elif verification_condition == 'EXCLUSIVE_RANGE':
         operator = 'Exclusive Range'
-        if result['actual_value'] > float(verification_values[0]) and result['actual_value'] < (verification_values[1]):
+        if float(result['actual_value']) > float(verification_values[0]) and float(result['actual_value']) < float(verification_values[1]):
             result['verification_status'] = 'PASS'
         else:
             result['verification_status'] = 'FAIL'
