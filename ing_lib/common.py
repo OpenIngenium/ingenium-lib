@@ -95,7 +95,7 @@ def ingenium_rest_get(endpoint):
 
     # If needed, refresh the token
     if _stale_token():
-        refresh_endpoint(_extact_server(endpoint), False)
+        refresh_auth(_extract_server(endpoint), False)
 
     data = None
 
@@ -130,7 +130,7 @@ def ingenium_rest_get_paginated(endpoint, query_params={}):
 
     # If needed, refresh the token
     if _stale_token():
-        refresh_endpoint(_extact_server(endpoint), False)
+        refresh_auth(_extract_server(endpoint), False)
 
     _INITIAL_LIMIT = 1000
     _INITIAL_OFFSET = 0
@@ -352,6 +352,10 @@ def refresh_auth(server, force=False):
 
     """
 
+    refresh_time = get_refresh_time()
+    if refresh_time is None:
+        raise IngeniumLibError("Cannot refresh token: No refresh time available. Please authenticate first.")
+
     token_time_remaining = (datetime.datetime.utcnow() - get_refresh_time()).total_seconds()
 
     if force or _stale_token():
@@ -372,7 +376,7 @@ def refresh_auth(server, force=False):
             
 
         if response_handler(refresh):
-            _store['token'] = f"Bearer {json.loads(logon.text)['access_token']}"
+            _store['token'] = f"Bearer {json.loads(refresh.text)['access_token']}"
             _store['refresh_time'] = datetime.datetime.utcnow()
             msg = f"Successfully refreshed token with: {server}"
             logger.debug(msg)
@@ -415,6 +419,6 @@ def _stale_token():
     return elapsed > _TOKEN_REFRESH_DURATION
 
 
-def _extact_server(endpoint):
+def _extract_server(endpoint):
     parsed = urlparse(endpoint)
     return f'{parsed.scheme}://{parsed.netloc}'
