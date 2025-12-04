@@ -29,7 +29,7 @@ class TestProjConfigBackup:
         assert inputs.api_version == 'v4'
         assert inputs.file_output == '/path/to/backup.json'
         assert inputs.debug is False
-        assert inputs.filter_retired is True
+        assert inputs.filter_retired is False
 
     def test_get_input_with_optional_args(self):
         """Test get_input with optional arguments."""
@@ -61,17 +61,67 @@ class TestProjConfigBackup:
         with pytest.raises(SystemExit):
             get_input(args)
 
-    def test_get_source_dictionaries_v4(self, comprehensive_server_mock):
+    @patch('apps.ProjConfigBackup.get_dictionary_versions')
+    def test_get_source_dictionaries_v4(self, mock_get_versions, comprehensive_server_mock):
         """Test get_source_dictionaries with v4 API."""
-        result = get_source_dictionaries('https://test-server.example.com', 'v4', True)
+        # Setup mock return value
+        mock_versions = [
+            {
+                'dictionary_version': 'v1.0',
+                'dictionary_description': 'Test Dict v1.0',
+                'state': 'PUBLISHED'
+            },
+            {
+                'dictionary_version': 'v1.1',
+                'dictionary_description': 'Test Dict v1.1',
+                'state': 'PUBLISHED'
+            }
+        ]
+        # Set the return value for both flight and sse calls
+        mock_get_versions.return_value = mock_versions
         
+        # Create a mock inputs object with required attributes
+        class MockInputs:
+            flight_sse = None
+            specific_versions = None
+            filter_retired = False
+            include_vis = False
+            include_cs = False
+            
+        inputs = MockInputs()
+        result = get_source_dictionaries('https://test-server.example.com', 'v4', inputs)
+        
+        # Check that get_dictionary_versions was called twice (once for flight, once for sse)
+        assert mock_get_versions.call_count == 2
+        mock_get_versions.assert_any_call('https://test-server.example.com', 'flight', api_version='v4')
+        mock_get_versions.assert_any_call('https://test-server.example.com', 'sse', api_version='v4')
+        
+        # Check the basic structure
         assert 'versions' in result
         assert 'flight' in result['versions']
         assert 'sse' in result['versions']
-        # The comprehensive_server_mock should return test data with published versions
+        
+        # Check that the versions are correctly processed
+        assert isinstance(result['versions']['flight'], dict)
+        assert len(result['versions']['flight']) == 2  # Should have exactly 2 versions
+        
+        # Check that both versions are present and have the correct structure
         assert 'v1.0' in result['versions']['flight']
+        assert 'v1.1' in result['versions']['flight']
+        
+        # Check that the version information is correctly stored
+        v1_0 = result['versions']['flight']['v1.0']
+        assert v1_0['dictionary_version'] == 'v1.0'
+        assert v1_0['dictionary_description'] == 'Test Dict v1.0'
+        assert v1_0['state'] == 'PUBLISHED'
+        
+        v1_1 = result['versions']['flight']['v1.1']
+        assert v1_1['dictionary_version'] == 'v1.1'
+        assert v1_1['dictionary_description'] == 'Test Dict v1.1'
+        assert v1_1['state'] == 'PUBLISHED'
 
-    def test_get_source_dictionaries_filter_retired(self):
+    @patch('apps.ProjConfigBackup.get_dictionary_versions')
+    def test_get_source_dictionaries_filter_retired(self, mock_get_versions):
         """Test that retired dictionaries are filtered when filter_retired=True."""
         mock_versions = [
             {
@@ -85,25 +135,27 @@ class TestProjConfigBackup:
                 'state': 'RETIRED'
             }
         ]
-        
-        def mock_paginated_side_effect(*args, **kwargs):
-            """Return versions for dictionary calls, empty for others."""
-            if len(args) > 0:
-                endpoint = args[0]
-                if 'dictionaries' in endpoint and 'versions' in endpoint:
-                    return mock_versions
-            return []
-        
-        with patch('common.ingenium_rest_get_paginated', side_effect=mock_paginated_side_effect), \
-             patch('common.ingenium_rest_get', return_value=[]):
-            
-            result = get_source_dictionaries('https://test-server.example.com', 'v4', True)
-            
-            # Should only contain the published version
-            assert 'v1.0' in result['versions']['flight']
-            assert 'v0.9' not in result['versions']['flight']
 
-    def test_get_source_dictionaries_include_retired(self):
+        class MockInputs:
+            def __init__(self, filter_retired=False):
+                self.filter_retired = filter_retired
+                self.flight_sse = []          # limit to specific flight/sse if needed
+                self.specific_versions = []   # no version filter
+                self.include_vis = False
+                self.include_cs = False
+
+        # Mock the dictionary versions returned for both flight and sse
+        mock_get_versions.return_value = mock_versions
+
+        inputs = MockInputs(filter_retired=True)
+        result = get_source_dictionaries('https://test-server.example.com', 'v4', inputs)
+
+        # Should only contain the published version
+        assert 'v1.0' in result['versions']['flight']
+        assert 'v0.9' not in result['versions']['flight']
+
+    @patch('apps.ProjConfigBackup.get_dictionary_versions')
+    def test_get_source_dictionaries_include_retired(self, mock_get_versions):
         """Test that retired dictionaries are included when filter_retired=False."""
         mock_versions = [
             {
@@ -117,23 +169,24 @@ class TestProjConfigBackup:
                 'state': 'RETIRED'
             }
         ]
-        
-        def mock_paginated_side_effect(*args, **kwargs):
-            """Return versions for dictionary calls, empty for others."""
-            if len(args) > 0:
-                endpoint = args[0]
-                if 'dictionaries' in endpoint and 'versions' in endpoint:
-                    return mock_versions
-            return []
-        
-        with patch('common.ingenium_rest_get_paginated', side_effect=mock_paginated_side_effect), \
-             patch('common.ingenium_rest_get', return_value=[]):
-            
-            result = get_source_dictionaries('https://test-server.example.com', 'v4', False)
-            
-            # Should contain both versions
-            assert 'v1.0' in result['versions']['flight']
-            assert 'v0.9' in result['versions']['flight']
+
+        class MockInputs:
+            def __init__(self, filter_retired=False):
+                self.filter_retired = filter_retired
+                # flight_sse = None -> process both 'sse' and 'flight'
+                self.flight_sse = None
+                self.specific_versions = []   # no version filter
+                self.include_vis = False
+                self.include_cs = False
+
+        mock_get_versions.return_value = mock_versions
+
+        inputs = MockInputs(filter_retired=False)
+        result = get_source_dictionaries('https://test-server.example.com', 'v4', inputs)
+
+        # Should contain both versions
+        assert 'v1.0' in result['versions']['flight']
+        assert 'v0.9' in result['versions']['flight']
 
     def test_main_success(self, comprehensive_server_mock, mock_user_input):
         """Test successful main execution."""
@@ -208,16 +261,42 @@ class TestProjConfigBackup:
             call_args = mock_auth.call_args
             assert call_args[1]['rsa'] is True
 
-    def test_get_source_dictionaries_v3(self, comprehensive_server_mock):
+
+    @patch('apps.ProjConfigBackup.get_dictionary_versions')
+    def test_get_source_dictionaries_v3(self, mock_get_versions, comprehensive_server_mock):
         """Test get_source_dictionaries with v3 API."""
-        result = get_source_dictionaries('https://test-server.example.com', 'v3', True)
-        
+        # Mock versions returned by the v3 API
+        mock_versions = [
+            {
+                'dictionary_version': 'v1.0',
+                'dictionary_description': 'Test Dict v1.0',
+                'state': 'PUBLISHED',
+            }
+        ]
+        mock_get_versions.return_value = mock_versions
+
+        # Create a simple object to mock the inputs parameter
+        class MockInputs:
+            def __init__(self):
+                # This will make the function process both 'sse' and 'flight' dict types
+                self.flight_sse = None
+                self.specific_versions = []
+                self.filter_retired = False
+                self.include_vis = False
+                self.include_cs = False
+
+        inputs = MockInputs()
+        result = get_source_dictionaries('https://test-server.example.com', 'v3', inputs)
+
         assert 'versions' in result
         assert 'flight' in result['versions']
         assert 'v1.0' in result['versions']['flight']
 
-    def test_get_source_dictionaries_exception_handling(self):
+    @patch('project_config.ingenium_rest_get_paginated')
+    @patch('apps.ProjConfigBackup.get_dictionary_versions')
+    def test_get_source_dictionaries_exception_handling(self, mock_get_versions, mock_rest_get):
         """Test exception handling in get_source_dictionaries."""
+        # Setup mock to return test versions
         mock_versions = [
             {
                 'dictionary_version': 'v1.0',
@@ -225,23 +304,37 @@ class TestProjConfigBackup:
                 'state': 'PUBLISHED'
             }
         ]
-        
-        def mock_paginated_side_effect(*args, **kwargs):
-            """Return versions for dictionary calls, empty for others."""
-            if len(args) > 0:
-                endpoint = args[0]
-                if 'dictionaries' in endpoint and 'versions' in endpoint:
-                    return mock_versions
-            return []
-        
-        with patch('common.ingenium_rest_get_paginated', side_effect=mock_paginated_side_effect), \
-             patch('common.ingenium_rest_get', side_effect=Exception("Network error")):
-            
+        mock_rest_get.return_value = mock_versions
+        mock_get_versions.return_value = mock_versions
+
+        # Create a simple object to mock the inputs parameter
+        class MockInputs:
+            def __init__(self):
+                # Process both 'sse' and 'flight'
+                self.flight_sse = None
+                self.specific_versions = []
+                self.filter_retired = False
+                self.include_vis = False
+                self.include_cs = False
+
+        inputs = MockInputs()
+
+        with patch('common.ingenium_rest_get', side_effect=Exception("Network error")):
             # Should not raise exception but log warning
-            result = get_source_dictionaries('https://test-server.example.com', 'v4', True)
-            
+            result = get_source_dictionaries('https://test-server.example.com', 'v4', inputs)
+
             assert 'versions' in result
             assert 'v1.0' in result['versions']['flight']
+
+            # Verify get_dictionary_versions was called for both sse and flight
+            assert mock_get_versions.call_count == 2
+            mock_get_versions.assert_any_call(
+                'https://test-server.example.com', 'sse', api_version='v4'
+            )
+            mock_get_versions.assert_any_call(
+                'https://test-server.example.com', 'flight', api_version='v4'
+            )
+            mock_rest_get.assert_called()
 
     def test_main_with_ssl_ca_bundle(self, comprehensive_server_mock, mock_user_input):
         """Test main execution with SSL CA bundle."""

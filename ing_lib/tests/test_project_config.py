@@ -5,6 +5,7 @@ Tests for project_config.py module
 import pytest
 from unittest.mock import patch, MagicMock
 import sys
+from datetime import datetime
 
 # Import the module under test
 import project_config
@@ -13,7 +14,7 @@ import project_config
 class TestProjectConfig:
     """Test class for project_config module functionality."""
     
-    @patch('common.ingenium_rest_get_paginated')
+    @patch('project_config.ingenium_rest_get_paginated')
     def test_get_dictionary_versions(self, mock_get_paginated):
         """Test get_dictionary_versions function."""
         mock_get_paginated.return_value = [
@@ -40,8 +41,7 @@ class TestProjectConfig:
         mock_delete.return_value = mock_response
         
         with patch('common.response_handler', return_value=True), \
-             patch('common.token', 'test_token'), \
-             patch('common.ssl_verify', True):
+             patch('common._store', {'token': 'test_token', 'ssl_verify': True, 'refresh_time': datetime.utcnow()}):
             
             project_config.delete_dictionary_version(
                 'https://test-server.example.com', 'flight', 'v1.0'
@@ -57,15 +57,14 @@ class TestProjectConfig:
         mock_delete.return_value = mock_response
         
         with patch('common.response_handler', return_value=False), \
-             patch('common.token', 'test_token'), \
-             patch('common.ssl_verify', True):
+             patch('common._store', {'token': 'test_token', 'ssl_verify': True, 'refresh_time': datetime.utcnow()}):
             
             with pytest.raises(Exception):  # Should raise IngeniumLibError
                 project_config.delete_dictionary_version(
                     'https://test-server.example.com', 'flight', 'v1.0'
                 )
 
-    @patch('common.ingenium_rest_get_paginated')
+    @patch('project_config.ingenium_rest_get_paginated')
     def test_get_dictionary(self, mock_get_paginated):
         """Test get_dictionary function."""
         mock_get_paginated.return_value = [
@@ -89,4 +88,5 @@ class TestProjectConfig:
         
         # Test that logger is properly configured
         assert hasattr(project_config, 'logger')
-        assert project_config.logger.name == 'project_config' 
+        # Check that the logger name ends with 'project_config' to handle different import styles
+        assert project_config.logger.name.endswith('project_config')
