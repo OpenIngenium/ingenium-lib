@@ -52,7 +52,7 @@ header-def = element header {
 }
 
 custom-script-def = element custom_script {
-  # The script name. Must be unique and posix compliant
+  # The script name. Must be posix compliant
   attribute script_name {text},
   # Whether the custom script is considered a "command"
   # Used to control automatic execution
@@ -65,7 +65,7 @@ custom-script-def = element custom_script {
   # Script Path. The local path to the script
   attribute script_path {text},
   # Script ID (Base64 encoding of path)
-  attribute script_id {text},
+  attribute script_id {text}?,
   # List of inputs the script takes
   input-field-def*,
   # Entries are (possibly) repeating structure that has inputs, outputs, and an associated stauts
