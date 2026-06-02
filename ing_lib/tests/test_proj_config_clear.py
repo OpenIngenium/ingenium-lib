@@ -2,6 +2,10 @@
 Tests for ProjConfigClear.py
 """
 
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import pytest
 from unittest.mock import patch
 from apps.ProjConfigClear import get_input, clear_project_configuration, main, common

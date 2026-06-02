@@ -11,7 +11,7 @@ import sys
 
 # Import the module under test
 from apps.ProjConfigCreateUpdateCS import (
-    get_input, detect_file_type, generate_script_id, generate_hash,
+    get_input, detect_file_type, generate_hash,
     parse_custom_script_xml, parse_custom_script_json, validate_script_data, main,
     compare_and_log_differences, generate_server_script_path, validate_advanced_layout
 )
@@ -88,16 +88,6 @@ class TestProjConfigCreateUpdateCS:
         finally:
             os.remove(temp_file)
 
-    def test_generate_script_id(self):
-        """Test script ID generation."""
-        script_path = "test/path/script.sh"
-        script_id = generate_script_id(script_path)
-        
-        # Should be base64 encoded
-        import base64
-        decoded = base64.b64decode(script_id).decode('utf-8')
-        assert decoded == script_path
-
     def test_generate_hash(self):
         """Test hash generation for script files."""
         with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
@@ -155,15 +145,13 @@ class TestProjConfigCreateUpdateCS:
         """Test parsing of comprehensive custom script XML file."""
         xml_dir = os.path.dirname(temp_custom_script_xml)
         with patch.dict(os.environ, {'PWD': xml_dir}):
-            script_data = parse_custom_script_xml(temp_custom_script_xml, xml_dir)
+            script_data, script_id = parse_custom_script_xml(temp_custom_script_xml, xml_dir)
         
         # Test basic script attributes
         assert script_data['script_name'] == 'comprehensive_test_script'
         assert script_data['description'] == 'Comprehensive test script with all field types'
-        # Hash and script_id are generated from actual files, not hardcoded XML values
+        # Hash is generated from actual file, not hardcoded XML value
         assert len(script_data['hash']) == 64  # SHA256 hex length
-        assert script_data['script_id'] == generate_script_id('test_script.sh')
-        assert 'script_id' in script_data
         assert 'hash' in script_data
         
         # Test input fields - should have multiple types
@@ -268,14 +256,13 @@ class TestProjConfigCreateUpdateCS:
     def test_parse_custom_script_json(self, temp_custom_script_json):
         """Test parsing of custom script JSON file with comprehensive content."""
         json_dir = os.path.dirname(temp_custom_script_json)
-        script_data = parse_custom_script_json(temp_custom_script_json, json_dir)
+        script_data, script_id = parse_custom_script_json(temp_custom_script_json, json_dir)
         
         # Test basic script attributes
         assert script_data['script_name'] == 'json_test_script'
         assert script_data['description'] == 'Test script defined in JSON format'
-        # Hash and script_id are generated from actual files, not hardcoded JSON values
+        # Hash is generated from actual file, not hardcoded JSON value
         assert len(script_data['hash']) == 64  # SHA256 hex length
-        assert script_data['script_id'] == generate_script_id('json_test.sh')
         assert script_data['status'] == 'ACTIVE'
         
         # Test inputs
@@ -321,14 +308,13 @@ class TestProjConfigCreateUpdateCS:
     def test_parse_simple_custom_script_xml(self, temp_simple_custom_script_xml):
         """Test parsing of simple custom script XML file."""
         xml_dir = os.path.dirname(temp_simple_custom_script_xml)
-        script_data = parse_custom_script_xml(temp_simple_custom_script_xml, xml_dir)
+        script_data, script_id = parse_custom_script_xml(temp_simple_custom_script_xml, xml_dir)
         
         # Test basic attributes
         assert script_data['script_name'] == 'simple_script'
         assert script_data['description'] == 'Simple test script'
-        # Hash and script_id are generated from actual files, not hardcoded XML values
+        # Hash is generated from actual file, not hardcoded XML value
         assert len(script_data['hash']) == 64  # SHA256 hex length
-        assert script_data['script_id'] == generate_script_id('simple.py')
         
         # Test simple structure
         assert len(script_data['inputs']) == 1
@@ -349,14 +335,13 @@ class TestProjConfigCreateUpdateCS:
     def test_parse_custom_script_with_entries(self, temp_custom_script_with_entries):
         """Test parsing of custom script XML with multiple script entries."""
         xml_dir = os.path.dirname(temp_custom_script_with_entries)
-        script_data = parse_custom_script_xml(temp_custom_script_with_entries, xml_dir)
+        script_data, script_id = parse_custom_script_xml(temp_custom_script_with_entries, xml_dir)
         
         # Test basic attributes
         assert script_data['script_name'] == 'multi_entry_script'
         assert script_data['description'] == 'Script with multiple entry processing'
-        # Verify hash and script_id are generated correctly
+        # Verify hash is generated correctly
         assert len(script_data['hash']) == 64  # SHA256 hex length
-        assert script_data['script_id'] == generate_script_id('multi_entry.sh')
         
         # Test global inputs
         assert len(script_data['inputs']) == 1
@@ -389,7 +374,7 @@ class TestProjConfigCreateUpdateCS:
 
     def test_parse_custom_script_all_input_types(self, temp_custom_script_xml):
         """Test parsing of all supported input field types."""
-        script_data = parse_custom_script_xml(temp_custom_script_xml, '/opt/scripts')
+        script_data, script_id = parse_custom_script_xml(temp_custom_script_xml, '/opt/scripts')
         
         input_fields = {field['name']: field for field in script_data['inputs']}
         
@@ -410,7 +395,7 @@ class TestProjConfigCreateUpdateCS:
 
     def test_parse_custom_script_all_output_types(self, temp_custom_script_xml):
         """Test parsing of all supported output field types."""
-        script_data = parse_custom_script_xml(temp_custom_script_xml, '/opt/scripts')
+        script_data, script_id = parse_custom_script_xml(temp_custom_script_xml, '/opt/scripts')
         
         output_fields = {field['name']: field for field in script_data['outputs']}
         
@@ -430,7 +415,7 @@ class TestProjConfigCreateUpdateCS:
     def test_parse_custom_script_phase_validation(self, temp_custom_script_xml):
         """Test that input field phases are correctly parsed."""
         xml_dir = os.path.dirname(temp_custom_script_xml)
-        script_data = parse_custom_script_xml(temp_custom_script_xml, xml_dir)
+        script_data, script_id = parse_custom_script_xml(temp_custom_script_xml, xml_dir)
         
         input_fields = {field['name']: field for field in script_data['inputs']}
         
@@ -442,7 +427,7 @@ class TestProjConfigCreateUpdateCS:
     def test_parse_custom_script_required_validation(self, temp_custom_script_xml):
         """Test that input field required flags are correctly parsed."""
         xml_dir = os.path.dirname(temp_custom_script_xml)
-        script_data = parse_custom_script_xml(temp_custom_script_xml, xml_dir)
+        script_data, script_id = parse_custom_script_xml(temp_custom_script_xml, xml_dir)
         
         input_fields = {field['name']: field for field in script_data['inputs']}
         
@@ -454,7 +439,7 @@ class TestProjConfigCreateUpdateCS:
     def test_parse_custom_script_default_values(self, temp_custom_script_xml):
         """Test that default values are correctly parsed."""
         xml_dir = os.path.dirname(temp_custom_script_xml)
-        script_data = parse_custom_script_xml(temp_custom_script_xml, xml_dir)
+        script_data, script_id = parse_custom_script_xml(temp_custom_script_xml, xml_dir)
         
         input_fields = {field['name']: field for field in script_data['inputs']}
         
@@ -470,8 +455,7 @@ class TestProjConfigCreateUpdateCS:
             'script_name': 'valid_script',
             'script_path': 'scripts/valid_script.sh',
             'description': 'Valid test script',
-            'is_command': 'false',
-            'script_id': generate_script_id('scripts/valid_script.sh')
+            'is_command': 'false'
         }
         
         assert validate_script_data(script_data) is True
@@ -496,14 +480,15 @@ class TestProjConfigCreateUpdateCS:
         
         assert validate_script_data(script_data) is False
 
-    @patch('common.authenticate')
+    @patch('ing_lib.common.authenticate')
     @patch('getpass.getpass')
     @patch('getpass.getuser')
+    @patch('apps.ProjConfigCreateUpdateCS.update_custom_script')
     @patch('apps.ProjConfigCreateUpdateCS.get_custom_scripts')
     @patch('apps.ProjConfigCreateUpdateCS.create_custom_script')
     @patch('os.path.exists')
     def test_main_create_new_script(self, mock_exists, mock_create, mock_get_scripts,
-                                   mock_getuser, mock_getpass, mock_auth,
+                                   mock_update, mock_getuser, mock_getpass, mock_auth,
                                    temp_custom_script_xml):
         """Test main execution for creating a new script."""
         mock_auth.return_value = True
@@ -511,6 +496,7 @@ class TestProjConfigCreateUpdateCS:
         mock_getpass.return_value = 'test_password'
         mock_get_scripts.return_value = []  # No existing scripts
         mock_exists.return_value = True
+        mock_update.return_value = {'script_name': 'comprehensive_test_script', 'script_id': 'dGVzdF9zY3JpcHQuc2g='}
         
         xml_dir = os.path.dirname(temp_custom_script_xml)
         args = [
@@ -521,10 +507,10 @@ class TestProjConfigCreateUpdateCS:
         
         main(args)
         
-        # Verify create was called
-        mock_create.assert_called_once()
+        # Verify update was called (since XML has script_id)
+        mock_update.assert_called_once()
 
-    @patch('common.authenticate')
+    @patch('ing_lib.common.authenticate')
     @patch('getpass.getpass')
     @patch('getpass.getuser')
     @patch('apps.ProjConfigCreateUpdateCS.get_custom_scripts')
@@ -539,22 +525,19 @@ class TestProjConfigCreateUpdateCS:
         mock_getpass.return_value = 'test_password'
         mock_exists.return_value = True
         
-        # Mock existing script with same ID
+        # Mock existing script with same name
         with patch('apps.ProjConfigCreateUpdateCS.parse_custom_script_xml') as mock_parse:
-            # Use properly base64 encoded script ID for test_script.sh
-            existing_script_id = generate_script_id('test_script.sh')
-            mock_parse.return_value = {
+            mock_parse.return_value = ({
                 'script_name': 'test_script',
                 'script_path': 'test_script.sh',
                 'description': 'Test script',
-                'script_id': existing_script_id,
                 'is_command': 'false',
                 'hash': 'a'*64,  # Valid SHA256 hash format
                 'inputs': [],
                 'outputs': []
-            }
+            }, 'dGVzdF9zY3JpcHQuc2g=')
             
-            mock_get_scripts.return_value = [{'script_id': existing_script_id}]
+            mock_get_scripts.return_value = [{'script_name': 'test_script'}]
             
             xml_dir = os.path.dirname(temp_custom_script_xml)
             args = [
@@ -568,7 +551,7 @@ class TestProjConfigCreateUpdateCS:
             # Verify update was called
             mock_update.assert_called_once()
 
-    @patch('common.authenticate')
+    @patch('ing_lib.common.authenticate')
     def test_main_authentication_failure(self, mock_auth):
         """Test main execution with authentication failure."""
         mock_auth.return_value = False
@@ -725,7 +708,7 @@ class TestProjConfigCreateUpdateCS:
 
     def test_parse_custom_script_display_name_handling(self, temp_custom_script_xml):
         """Test that display_name attributes are correctly parsed."""
-        script_data = parse_custom_script_xml(temp_custom_script_xml, '/opt/scripts')
+        script_data, script_id = parse_custom_script_xml(temp_custom_script_xml, '/opt/scripts')
         
         input_fields = {field['name']: field for field in script_data['inputs']}
         output_fields = {field['name']: field for field in script_data['outputs']}
@@ -742,7 +725,7 @@ class TestProjConfigCreateUpdateCS:
 
     def test_validate_script_data_complex_validation(self, temp_custom_script_xml):
         """Test validation of complex script data."""
-        script_data = parse_custom_script_xml(temp_custom_script_xml, '/opt/scripts')
+        script_data, script_id = parse_custom_script_xml(temp_custom_script_xml, '/opt/scripts')
         
         # Should pass validation
         assert validate_script_data(script_data) is True
@@ -752,14 +735,15 @@ class TestProjConfigCreateUpdateCS:
         del invalid_data['script_name']
         assert validate_script_data(invalid_data) is False
 
-    @patch('common.authenticate')
+    @patch('ing_lib.common.authenticate')
     @patch('getpass.getpass')
     @patch('getpass.getuser')
+    @patch('apps.ProjConfigCreateUpdateCS.update_custom_script')
     @patch('apps.ProjConfigCreateUpdateCS.get_custom_scripts')
     @patch('apps.ProjConfigCreateUpdateCS.create_custom_script')
     @patch('os.path.exists')
     def test_main_comprehensive_workflow(self, mock_exists, mock_create, mock_get_scripts,
-                                        mock_getuser, mock_getpass, mock_auth,
+                                        mock_update, mock_getuser, mock_getpass, mock_auth,
                                         temp_custom_script_xml):
         """Test main execution with comprehensive custom script parsing."""
         mock_auth.return_value = True
@@ -767,6 +751,7 @@ class TestProjConfigCreateUpdateCS:
         mock_getpass.return_value = 'test_password'
         mock_get_scripts.return_value = []  # No existing scripts
         mock_exists.return_value = True
+        mock_update.return_value = {'script_name': 'comprehensive_test_script', 'script_id': 'dGVzdF9zY3JpcHQuc2g='}
         
         xml_dir = os.path.dirname(temp_custom_script_xml)
         args = [
@@ -777,20 +762,20 @@ class TestProjConfigCreateUpdateCS:
         
         main(args)
         
-        # Verify create was called
-        mock_create.assert_called_once()
+        # Verify update was called (since XML has script_id)
+        mock_update.assert_called_once()
         
-        # Verify the script data passed to create function
-        call_args = mock_create.call_args
-        script_list = call_args[0][1]  # Second argument should be the script list
-        assert len(script_list) == 1
+        # Verify the script data passed to update function
+        call_args = mock_update.call_args
+        script_id = call_args[0][1]  # Second argument should be the script_id
+        script_data = call_args[0][2]  # Third argument should be the script data
         
-        script = script_list[0]
-        assert script['script_name'] == 'comprehensive_test_script'
-        assert len(script['inputs']) == 7
-        assert len(script['outputs']) == 5
-        assert len(script['entries']) == 1
-        assert 'output_array' in script 
+        assert script_id == 'dGVzdF9zY3JpcHQuc2g='
+        assert script_data['script_name'] == 'comprehensive_test_script'
+        assert len(script_data['inputs']) == 7
+        assert len(script_data['outputs']) == 5
+        assert len(script_data['entries']) == 1
+        assert 'output_array' in script_data 
 
 class TestAdvancedLayoutValidation:
     """Test class for advanced layout validation functionality."""
