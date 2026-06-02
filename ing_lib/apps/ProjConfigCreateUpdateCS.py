@@ -337,6 +337,11 @@ def parse_input_field(input_elem):
         "type": input_elem.get("type")
     }
     
+    # Add display_name if present
+    display_name = input_elem.get("display_name")
+    if display_name:
+        input_data["display_name"] = display_name
+    
     # Add default value if present
     default_value = input_elem.get("default_value")
     if default_value:
@@ -375,6 +380,11 @@ def parse_output_field(output_elem):
         "description": output_elem.get("description"), 
         "type": output_elem.get("type")
     }
+    
+    # Add display_name if present
+    display_name = output_elem.get("display_name")
+    if display_name:
+        output_data["display_name"] = display_name
 
     return output_data
 
@@ -399,6 +409,11 @@ def parse_output_array_field(output_array_field_elem):
         "type": output_array_field_elem.get("type"),
         "visible": output_array_field_elem.get("visible", "YES")
     }
+    
+    # Add display_name if present
+    display_name = output_array_field_elem.get("display_name")
+    if display_name:
+        output_array_field_data["display_name"] = display_name
 
     return output_array_field_data
 
