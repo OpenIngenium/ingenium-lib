@@ -2,17 +2,22 @@
 Tests for ProjConfigPalette.py script
 """
 
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import pytest
 from unittest.mock import patch, MagicMock, mock_open
 import tempfile
-import os
-import sys
-from openpyxl import Workbook
+
+try:
+    from openpyxl import Workbook
+except ImportError:
+    Workbook = None
 
 # Import the module under test
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'apps'))
-import ProjConfigPalette
-import common
+from apps import ProjConfigPalette
+import ing_lib.common as common
 
 
 class TestProjConfigPalette:
@@ -54,8 +59,8 @@ class TestProjConfigPalette:
         assert inputs.debug is False
         assert inputs.username is None
 
-    @patch('ProjConfigPalette.get_custom_palette')
-    @patch('ProjConfigPalette.get_built_in_palette')
+    @patch('apps.ProjConfigPalette.get_custom_palette')
+    @patch('apps.ProjConfigPalette.get_built_in_palette')
     def test_get_palette_info_success(self, mock_built_in_palette, mock_custom_palette):
         """Test successful palette info retrieval."""
         mock_built_in_palette.return_value = [
@@ -84,17 +89,17 @@ class TestProjConfigPalette:
         assert result['built_in'][0]['step_type'] == 'MANUAL_INPUT'
         assert result['custom'][0]['step_id'] == 'custom_step_1'
 
-    @patch('ProjConfigPalette.get_built_in_palette')
+    @patch('apps.ProjConfigPalette.get_built_in_palette')
     def test_get_palette_info_failure(self, mock_built_in_palette):
         """Test palette info retrieval failure."""
         mock_built_in_palette.side_effect = Exception("Server error")
         
-        with pytest.raises(common.IngeniumLibError, match="Error getting palette information from server"):
+        with pytest.raises(common.IngeniumLibError, match=r"Error getting palette information from server"):
             ProjConfigPalette.get_palette_info('https://test-server.example.com')
 
     def test_read_palette_excel_file_not_found(self):
         """Test reading Excel file that doesn't exist."""
-        with pytest.raises(common.IngeniumLibError, match="Excel file not found"):
+        with pytest.raises(common.IngeniumLibError, match=r"Excel file not found:"):
             ProjConfigPalette.read_palette_excel('nonexistent.xlsx')
 
     @patch('openpyxl.load_workbook')
@@ -151,10 +156,10 @@ class TestProjConfigPalette:
         """Test reading malformed Excel file."""
         mock_load_workbook.side_effect = Exception("Invalid Excel format")
         
-        with pytest.raises(common.IngeniumLibError, match="Error reading Excel file"):
+        with pytest.raises(common.IngeniumLibError, match=r"Error reading Excel file:"):
             ProjConfigPalette.read_palette_excel('malformed.xlsx')
 
-    @patch('ProjConfigPalette.Workbook')
+    @patch('apps.ProjConfigPalette.Workbook')
     @patch('openpyxl.load_workbook')
     def test_write_palette_excel_success(self, mock_load_workbook, mock_workbook_class):
         """Test successful writing of palette Excel file."""
@@ -196,12 +201,12 @@ class TestProjConfigPalette:
         mock_workbook.save.assert_called_once_with('test.xlsx')
         mock_workbook.close.assert_called_once()
 
-    @patch('ProjConfigPalette.Workbook')
+    @patch('apps.ProjConfigPalette.Workbook')
     def test_write_palette_excel_failure(self, mock_workbook_class):
         """Test writing Excel file failure."""
         mock_workbook_class.side_effect = Exception("Write error")
         
-        with pytest.raises(common.IngeniumLibError, match="Error writing Excel file"):
+        with pytest.raises(common.IngeniumLibError, match=r"Error writing Excel file:"):
             ProjConfigPalette.write_palette_excel('test.xlsx', {})
 
     def test_diff_palette_info_no_differences(self):
@@ -273,8 +278,8 @@ class TestProjConfigPalette:
         # This should not raise an exception and should complete without errors
         ProjConfigPalette.diff_palette_info(current_palette, excel_palette)
 
-    @patch('ProjConfigPalette.update_built_in_palette')
-    @patch('ProjConfigPalette.diff_palette_info')
+    @patch('apps.ProjConfigPalette.update_built_in_palette')
+    @patch('apps.ProjConfigPalette.diff_palette_info')
     @patch('builtins.input')
     def test_update_palette_info_shows_diff_before_confirmation(self, mock_input, mock_diff, mock_update_builtin):
         """Test that update_palette_info calls diff_palette_info before asking for confirmation."""
@@ -317,8 +322,8 @@ class TestProjConfigPalette:
         mock_input.assert_called()
         mock_update_builtin.assert_called_once()
 
-    @patch('ProjConfigPalette.update_built_in_palette')
-    @patch('ProjConfigPalette.diff_palette_info')
+    @patch('apps.ProjConfigPalette.update_built_in_palette')
+    @patch('apps.ProjConfigPalette.diff_palette_info')
     @patch('builtins.input')
     def test_update_palette_info_with_auto_confirm(self, mock_input, mock_diff, mock_update_builtin):
         """Test that update_palette_info shows diff but skips confirmation with --confirm flag."""
@@ -360,8 +365,8 @@ class TestProjConfigPalette:
         mock_input.assert_not_called()  # Should not ask for confirmation
         mock_update_builtin.assert_called_once()
 
-    @patch('ProjConfigPalette.update_built_in_palette')
-    @patch('ProjConfigPalette.diff_palette_info')
+    @patch('apps.ProjConfigPalette.update_built_in_palette')
+    @patch('apps.ProjConfigPalette.diff_palette_info')
     @patch('builtins.input')
     def test_update_palette_info_cancelled_after_diff(self, mock_input, mock_diff, mock_update_builtin):
         """Test that update_palette_info shows diff and allows cancellation."""
@@ -403,10 +408,10 @@ class TestProjConfigPalette:
         mock_input.assert_called_once()
         mock_update_builtin.assert_not_called()
 
-    @patch('ProjConfigPalette.update_built_in_palette')
-    @patch('ProjConfigPalette.update_custom_palette')
-    @patch('ProjConfigPalette.create_custom_palette')
-    @patch('ProjConfigPalette.diff_palette_info')
+    @patch('apps.ProjConfigPalette.update_built_in_palette')
+    @patch('apps.ProjConfigPalette.update_custom_palette')
+    @patch('apps.ProjConfigPalette.create_custom_palette')
+    @patch('apps.ProjConfigPalette.diff_palette_info')
     @patch('builtins.input')
     def test_update_palette_info_with_confirmation(self, mock_input, mock_diff, mock_create, mock_update_custom, mock_update_builtin):
         """Test updating palette info with user confirmation."""
@@ -451,8 +456,8 @@ class TestProjConfigPalette:
         mock_update_builtin.assert_called_once()
         mock_input.assert_called()
 
-    @patch('ProjConfigPalette.update_built_in_palette')
-    @patch('ProjConfigPalette.diff_palette_info')
+    @patch('apps.ProjConfigPalette.update_built_in_palette')
+    @patch('apps.ProjConfigPalette.diff_palette_info')
     @patch('builtins.input')
     def test_update_palette_info_cancelled(self, mock_input, mock_diff, mock_update_builtin):
         """Test updating palette info when user cancels."""
@@ -473,7 +478,7 @@ class TestProjConfigPalette:
         mock_input.assert_called()
         mock_update_builtin.assert_not_called()
 
-    @patch('ProjConfigPalette.delete_custom_palette')
+    @patch('apps.ProjConfigPalette.delete_custom_palette')
     @patch('builtins.input')
     def test_delete_custom_steps_with_confirmation(self, mock_input, mock_delete):
         """Test deleting custom steps with user confirmation."""
@@ -508,7 +513,7 @@ class TestProjConfigPalette:
         
         mock_delete.assert_called_once_with('https://test-server.example.com', 'custom_1')
 
-    @patch('ProjConfigPalette.delete_custom_palette')
+    @patch('apps.ProjConfigPalette.delete_custom_palette')
     @patch('builtins.input')
     def test_delete_custom_steps_cancelled(self, mock_input, mock_delete):
         """Test deleting custom steps when user cancels."""
@@ -542,9 +547,9 @@ class TestProjConfigPalette:
         
         mock_delete.assert_not_called()
 
-    @patch('common.authenticate')
-    @patch('ProjConfigPalette.get_palette_info')
-    @patch('ProjConfigPalette.write_palette_excel')
+    @patch('ing_lib.common.authenticate')
+    @patch('apps.ProjConfigPalette.get_palette_info')
+    @patch('apps.ProjConfigPalette.write_palette_excel')
     @patch('getpass.getpass')
     def test_main_query_function(self, mock_getpass, mock_write_excel, mock_get_palette, mock_auth):
         """Test main function with query operation."""
@@ -564,7 +569,7 @@ class TestProjConfigPalette:
         mock_get_palette.assert_called_once()
         mock_write_excel.assert_called_once()
 
-    @patch('common.authenticate')
+    @patch('ing_lib.common.authenticate')
     @patch('getpass.getpass')
     def test_main_failed_login(self, mock_getpass, mock_auth):
         """Test main function with failed login."""
@@ -580,10 +585,10 @@ class TestProjConfigPalette:
         with pytest.raises(common.IngeniumLibError, match="Failure to Login"):
             ProjConfigPalette.main(args)
 
-    @patch('common.authenticate')
-    @patch('ProjConfigPalette.get_palette_info')
-    @patch('ProjConfigPalette.read_palette_excel')
-    @patch('ProjConfigPalette.diff_palette_info')
+    @patch('ing_lib.common.authenticate')
+    @patch('apps.ProjConfigPalette.get_palette_info')
+    @patch('apps.ProjConfigPalette.read_palette_excel')
+    @patch('apps.ProjConfigPalette.diff_palette_info')
     @patch('getpass.getpass')
     def test_main_diff_function(self, mock_getpass, mock_diff, mock_read_excel, mock_get_palette, mock_auth):
         """Test main function with diff operation."""
@@ -605,10 +610,10 @@ class TestProjConfigPalette:
         mock_read_excel.assert_called_once()
         mock_diff.assert_called_once()
 
-    @patch('common.authenticate')
-    @patch('ProjConfigPalette.get_palette_info')
-    @patch('ProjConfigPalette.read_palette_excel')
-    @patch('ProjConfigPalette.update_palette_info')
+    @patch('ing_lib.common.authenticate')
+    @patch('apps.ProjConfigPalette.get_palette_info')
+    @patch('apps.ProjConfigPalette.read_palette_excel')
+    @patch('apps.ProjConfigPalette.update_palette_info')
     @patch('getpass.getpass')
     def test_main_update_function(self, mock_getpass, mock_update, mock_read_excel, mock_get_palette, mock_auth):
         """Test main function with update operation."""
@@ -631,10 +636,10 @@ class TestProjConfigPalette:
         mock_read_excel.assert_called_once()
         mock_update.assert_called_once()
 
-    @patch('common.authenticate')
-    @patch('ProjConfigPalette.get_palette_info')
-    @patch('ProjConfigPalette.read_palette_excel')
-    @patch('ProjConfigPalette.delete_custom_steps')
+    @patch('ing_lib.common.authenticate')
+    @patch('apps.ProjConfigPalette.get_palette_info')
+    @patch('apps.ProjConfigPalette.read_palette_excel')
+    @patch('apps.ProjConfigPalette.delete_custom_steps')
     @patch('getpass.getpass')
     def test_main_delete_function(self, mock_getpass, mock_delete, mock_read_excel, mock_get_palette, mock_auth):
         """Test main function with delete operation."""
@@ -659,9 +664,9 @@ class TestProjConfigPalette:
 
     @patch('getpass.getuser')
     @patch('getpass.getpass')
-    @patch('common.authenticate')
-    @patch('ProjConfigPalette.get_palette_info')
-    @patch('ProjConfigPalette.write_palette_excel')
+    @patch('ing_lib.common.authenticate')
+    @patch('apps.ProjConfigPalette.get_palette_info')
+    @patch('apps.ProjConfigPalette.write_palette_excel')
     def test_main_with_username_option(self, mock_write_excel, mock_get_palette, mock_auth, mock_getpass, mock_getuser):
         """Test main function with username option."""
         mock_getuser.return_value = 'system_user'
@@ -685,9 +690,9 @@ class TestProjConfigPalette:
 
     @patch('getpass.getuser')
     @patch('getpass.getpass')
-    @patch('common.authenticate')
-    @patch('ProjConfigPalette.get_palette_info')
-    @patch('ProjConfigPalette.write_palette_excel')
+    @patch('ing_lib.common.authenticate')
+    @patch('apps.ProjConfigPalette.get_palette_info')
+    @patch('apps.ProjConfigPalette.write_palette_excel')
     def test_main_with_rsa_auth(self, mock_write_excel, mock_get_palette, mock_auth, mock_getpass, mock_getuser):
         """Test main function with RSA authentication."""
         mock_getuser.return_value = 'system_user'
@@ -709,11 +714,11 @@ class TestProjConfigPalette:
         call_args = mock_auth.call_args
         assert call_args[1]['rsa'] is True
 
-    @patch('common.authenticate')
+    @patch('ing_lib.common.authenticate')
     @patch('getpass.getpass')
-    @patch('ProjConfigPalette.get_palette_info')
-    @patch('ProjConfigPalette.read_palette_excel')
-    @patch('ProjConfigPalette.update_palette_info')
+    @patch('apps.ProjConfigPalette.get_palette_info')
+    @patch('apps.ProjConfigPalette.read_palette_excel')
+    @patch('apps.ProjConfigPalette.update_palette_info')
     def test_main_invalid_custom_step_id(self, mock_update, mock_read_excel, mock_get_palette, mock_auth, mock_getpass):
         """Test main function with invalid custom step ID in update."""
         mock_auth.return_value = True
@@ -742,11 +747,11 @@ class TestProjConfigPalette:
         
         mock_update.assert_called_once()
 
-    @patch('common.authenticate')
+    @patch('ing_lib.common.authenticate')
     @patch('getpass.getpass')
-    @patch('ProjConfigPalette.get_palette_info')
-    @patch('ProjConfigPalette.read_palette_excel')
-    @patch('ProjConfigPalette.update_palette_info')
+    @patch('apps.ProjConfigPalette.get_palette_info')
+    @patch('apps.ProjConfigPalette.read_palette_excel')
+    @patch('apps.ProjConfigPalette.update_palette_info')
     def test_main_modifying_existing_steps(self, mock_update, mock_read_excel, mock_get_palette, mock_auth, mock_getpass):
         """Test main function modifying existing built-in and custom steps."""
         mock_auth.return_value = True
@@ -808,10 +813,10 @@ class TestProjConfigPalette:
         assert call_args[0][3] is True  # confirm=True
 
     @patch('urllib3.disable_warnings')
-    @patch('common.authenticate')
+    @patch('ing_lib.common.authenticate')
     @patch('getpass.getpass')
-    @patch('ProjConfigPalette.get_palette_info')
-    @patch('ProjConfigPalette.write_palette_excel')
+    @patch('apps.ProjConfigPalette.get_palette_info')
+    @patch('apps.ProjConfigPalette.write_palette_excel')
     def test_main_ssl_ignore_error(self, mock_write_excel, mock_get_palette, mock_auth, mock_getpass, mock_disable_warnings):
         """Test main function with SSL error ignored."""
         mock_auth.return_value = True
@@ -830,10 +835,10 @@ class TestProjConfigPalette:
         # Verify SSL warnings were disabled
         mock_disable_warnings.assert_called_once()
 
-    @patch('common.authenticate')
+    @patch('ing_lib.common.authenticate')
     @patch('getpass.getpass')
-    @patch('ProjConfigPalette.get_palette_info')
-    @patch('ProjConfigPalette.write_palette_excel')
+    @patch('apps.ProjConfigPalette.get_palette_info')
+    @patch('apps.ProjConfigPalette.write_palette_excel')
     def test_main_ssl_ca_bundle(self, mock_write_excel, mock_get_palette, mock_auth, mock_getpass):
         """Test main function with SSL CA bundle specified."""
         mock_auth.return_value = True
@@ -929,10 +934,10 @@ class TestProjConfigPalette:
         assert 'custom' in result
         assert len(result['custom']) == 0  # Should skip placeholder messages
 
-    @patch('ProjConfigPalette.update_built_in_palette')
-    @patch('ProjConfigPalette.update_custom_palette')
-    @patch('ProjConfigPalette.create_custom_palette')
-    @patch('ProjConfigPalette.diff_palette_info')
+    @patch('apps.ProjConfigPalette.update_built_in_palette')
+    @patch('apps.ProjConfigPalette.update_custom_palette')
+    @patch('apps.ProjConfigPalette.create_custom_palette')
+    @patch('apps.ProjConfigPalette.diff_palette_info')
     @patch('builtins.input')
     def test_update_palette_info_create_new_custom_step(self, mock_input, mock_diff, mock_create, mock_update_custom, mock_update_builtin):
         """Test updating palette info by creating new custom step."""
@@ -969,8 +974,8 @@ class TestProjConfigPalette:
         mock_create.assert_called_once()
         mock_update_custom.assert_not_called()
 
-    @patch('ProjConfigPalette.update_built_in_palette')
-    @patch('ProjConfigPalette.diff_palette_info')
+    @patch('apps.ProjConfigPalette.update_built_in_palette')
+    @patch('apps.ProjConfigPalette.diff_palette_info')
     @patch('builtins.input')
     def test_update_palette_info_built_in_step_not_found(self, mock_input, mock_diff, mock_update_builtin):
         """Test updating palette info when built-in step not found on server."""
@@ -1003,7 +1008,7 @@ class TestProjConfigPalette:
         # Should not attempt to update non-existent step
         mock_update_builtin.assert_not_called()
 
-    @patch('ProjConfigPalette.delete_custom_palette')
+    @patch('apps.ProjConfigPalette.delete_custom_palette')
     @patch('builtins.input')
     def test_delete_custom_steps_step_not_found_on_server(self, mock_input, mock_delete):
         """Test deleting custom step when step not found on server."""
@@ -1031,7 +1036,7 @@ class TestProjConfigPalette:
         
         mock_delete.assert_not_called()
 
-    @patch('ProjConfigPalette.delete_custom_palette')
+    @patch('apps.ProjConfigPalette.delete_custom_palette')
     @patch('builtins.input')
     def test_delete_custom_steps_missing_step_id(self, mock_input, mock_delete):
         """Test deleting custom step when step_id is missing."""
@@ -1065,8 +1070,8 @@ class TestProjConfigPalette:
         
         mock_delete.assert_not_called()
 
-    @patch('ProjConfigPalette.update_built_in_palette')
-    @patch('ProjConfigPalette.diff_palette_info')
+    @patch('apps.ProjConfigPalette.update_built_in_palette')
+    @patch('apps.ProjConfigPalette.diff_palette_info')
     @patch('builtins.input')
     def test_update_palette_info_built_in_update_failure(self, mock_input, mock_diff, mock_update_builtin):
         """Test updating palette info when built-in step update fails."""
@@ -1107,8 +1112,8 @@ class TestProjConfigPalette:
         
         mock_update_builtin.assert_called_once()
 
-    @patch('ProjConfigPalette.create_custom_palette')
-    @patch('ProjConfigPalette.diff_palette_info')
+    @patch('apps.ProjConfigPalette.create_custom_palette')
+    @patch('apps.ProjConfigPalette.diff_palette_info')
     @patch('builtins.input')
     def test_update_palette_info_custom_step_creation_failure(self, mock_input, mock_diff, mock_create):
         """Test updating palette info when custom step creation fails."""
@@ -1143,7 +1148,7 @@ class TestProjConfigPalette:
         
         mock_create.assert_called_once()
 
-    @patch('ProjConfigPalette.delete_custom_palette')
+    @patch('apps.ProjConfigPalette.delete_custom_palette')
     @patch('builtins.input')
     def test_delete_custom_steps_deletion_failure(self, mock_input, mock_delete):
         """Test deleting custom step when deletion fails."""
@@ -1181,13 +1186,13 @@ class TestProjConfigPalette:
 
     def test_get_palette_info_custom_palette_failure(self):
         """Test palette info retrieval when custom palette fails."""
-        with patch('ProjConfigPalette.get_built_in_palette', return_value=[]), \
-             patch('ProjConfigPalette.get_custom_palette', side_effect=Exception("Custom palette error")):
+        with patch('apps.ProjConfigPalette.get_built_in_palette', return_value=[]), \
+             patch('apps.ProjConfigPalette.get_custom_palette', side_effect=Exception("Custom palette error")):
             
-            with pytest.raises(common.IngeniumLibError, match="Error getting palette information from server"):
+            with pytest.raises(common.IngeniumLibError, match=r"Error getting palette information from server:"):
                 ProjConfigPalette.get_palette_info('https://test-server.example.com')
 
-    @patch('ProjConfigPalette.Workbook')
+    @patch('apps.ProjConfigPalette.Workbook')
     def test_write_palette_excel_no_data(self, mock_workbook_class):
         """Test writing Excel file with no palette data."""
         mock_workbook = MagicMock()
@@ -1225,7 +1230,7 @@ class TestProjConfigPalette:
         # Should handle empty data gracefully
         ProjConfigPalette.diff_palette_info(current_palette, excel_palette)
 
-    @patch('ProjConfigPalette.diff_palette_info')
+    @patch('apps.ProjConfigPalette.diff_palette_info')
     @patch('builtins.input')
     def test_update_palette_info_no_steps_to_process(self, mock_input, mock_diff):
         """Test updating palette info with no steps to process."""

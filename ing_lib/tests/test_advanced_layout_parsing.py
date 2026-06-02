@@ -56,7 +56,7 @@ def temp_json_with_advanced_layout():
 
 def test_parse_json_with_advanced_layout(temp_json_with_advanced_layout):
     """Test that advanced layout with image and series is parsed correctly from JSON."""
-    script_data = parse_custom_script_json(temp_json_with_advanced_layout, '/opt/scripts')
+    script_data, script_id = parse_custom_script_json(temp_json_with_advanced_layout, '/opt/scripts')
     
     assert 'layout' in script_data
     assert len(script_data['layout']) == 1

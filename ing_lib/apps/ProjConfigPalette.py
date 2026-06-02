@@ -11,15 +11,18 @@ Authors:
 """
 
 ##################################################### Imports ######################################################
+import sys
+import os
+
 import logging
-from logs import init_console_logger, get_logger
+from ing_lib.logs import init_console_logger, get_logger
 
 init_console_logger()
 
-import common
-from project_config import get_custom_scripts, create_custom_script, update_custom_script
-from project_config import get_built_in_palette, get_custom_palette
-from project_config import update_built_in_palette, create_custom_palette, update_custom_palette, delete_custom_palette
+import ing_lib.common as common
+from ing_lib.project_config import get_custom_scripts, create_custom_script, update_custom_script
+from ing_lib.project_config import get_built_in_palette, get_custom_palette
+from ing_lib.project_config import update_built_in_palette, create_custom_palette, update_custom_palette, delete_custom_palette
 import argparse
 import getpass
 import urllib3

@@ -25,11 +25,11 @@ Authors:
 
 ##################################################### Imports ######################################################
 import logging
-from logs import init_console_logger
+from ing_lib.logs import init_console_logger
 init_console_logger(logging.INFO)
 
-import common
-from project_config import get_dictionary_versions, create_dictionary_version, create_dictionary_content
+import ing_lib.common as common
+from ing_lib.project_config import get_dictionary_versions, create_dictionary_version, create_dictionary_content
 import argparse
 import getpass
 import urllib3

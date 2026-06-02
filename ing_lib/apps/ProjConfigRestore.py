@@ -7,11 +7,11 @@ Authors:
 
 ##################################################### Imports ######################################################
 import logging
-from logs import init_console_logger,get_logger
+from ing_lib.logs import init_console_logger,get_logger
 init_console_logger()
 
-import common
-from project_config import create_dictionary_version,create_dictionary_content,create_custom_script,create_vnv_vis
+import ing_lib.common as common
+from ing_lib.project_config import create_dictionary_version,create_dictionary_content,create_custom_script,create_vnv_vis
 import argparse
 import getpass
 import urllib3

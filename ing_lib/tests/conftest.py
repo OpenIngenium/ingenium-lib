@@ -34,10 +34,19 @@ def mock_ssl_verify():
 @pytest.fixture
 def mock_common_globals():
     """Mock common module global variables."""
-    with patch('common.ssl_verify', True), \
-         patch('common.token', 'mock_token_12345'), \
-         patch('common.refresh_time', datetime.datetime.utcnow()), \
-         patch('common.refresh_auth', return_value=True):
+    mock_store = MagicMock()
+    mock_store.get.side_effect = lambda key: {
+        'token': 'Bearer mock_token_12345',
+        'refresh_time': datetime.datetime.now(datetime.UTC),
+        'ssl_verify': True
+    }.get(key)
+    
+    with patch('common.refresh_auth', return_value=True), \
+         patch('common._store', mock_store), \
+         patch('common.get_ssl_verify', return_value=True), \
+         patch('common.get_token', return_value='Bearer mock_token_12345'), \
+         patch('common.get_refresh_time', return_value=datetime.datetime.now(datetime.UTC)), \
+         patch('common._stale_token', return_value=False):
         yield
 
 @pytest.fixture
@@ -100,11 +109,18 @@ def mock_project_config_delete_functions():
 @pytest.fixture
 def mock_http_requests():
     """Mock all HTTP requests."""
+    # Create a mock response that works for most cases
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.text = '{"access_token": "mock_token_12345"}'
+    mock_response.json.return_value = []
+    mock_response.headers = {'x-total-count': '0'}
+    
     with patch('urllib3.disable_warnings'), \
-         patch('requests.get'), \
-         patch('requests.post'), \
-         patch('requests.patch'), \
-         patch('requests.delete'):
+         patch('requests.get', return_value=mock_response), \
+         patch('requests.post', return_value=mock_response), \
+         patch('requests.patch', return_value=mock_response), \
+         patch('requests.delete', return_value=mock_response):
         yield
 
 @pytest.fixture

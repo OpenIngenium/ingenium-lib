@@ -73,6 +73,10 @@ class TestProjConfigBackup:
                 self.filter_retired = True
                 self.include_vis = True
                 self.include_cs = True
+                self.include_cmds = True
+                self.include_eha = True
+                self.include_evr = True
+                self.include_mil1553 = True
 
         mock_inputs = MockInputs()
 
@@ -106,6 +110,10 @@ class TestProjConfigBackup:
                 self.filter_retired = True
                 self.include_vis = True
                 self.include_cs = True
+                self.include_cmds = True
+                self.include_eha = True
+                self.include_evr = True
+                self.include_mil1553 = True
 
         mock_inputs = MockInputs()
 
@@ -117,8 +125,8 @@ class TestProjConfigBackup:
                     return mock_versions
             return []
 
-        with patch('project_config.ingenium_rest_get_paginated', side_effect=mock_paginated_side_effect), \
-                patch('project_config.ingenium_rest_get', return_value=[]):
+        with patch('ing_lib.project_config.ingenium_rest_get_paginated', side_effect=mock_paginated_side_effect), \
+                patch('ing_lib.project_config.ingenium_rest_get', return_value=[]):
             
             result = get_source_dictionaries('https://test-server.example.com', 'v4', mock_inputs)
             
@@ -149,6 +157,10 @@ class TestProjConfigBackup:
                 self.filter_retired = True
                 self.include_vis = True
                 self.include_cs = True
+                self.include_cmds = True
+                self.include_eha = True
+                self.include_evr = True
+                self.include_mil1553 = True
 
         mock_inputs = MockInputs()
         
@@ -160,8 +172,8 @@ class TestProjConfigBackup:
                     return mock_versions
             return []
 
-        with patch('project_config.ingenium_rest_get_paginated', side_effect=mock_paginated_side_effect), \
-                patch('project_config.ingenium_rest_get', return_value=[]):
+        with patch('ing_lib.project_config.ingenium_rest_get_paginated', side_effect=mock_paginated_side_effect), \
+                patch('ing_lib.project_config.ingenium_rest_get', return_value=[]):
             
             result = get_source_dictionaries('https://test-server.example.com', 'v4', mock_inputs)
             
@@ -233,12 +245,16 @@ class TestProjConfigBackup:
                 self.filter_retired = True
                 self.include_vis = True
                 self.include_cs = True
+                self.include_cmds = True
+                self.include_eha = True
+                self.include_evr = True
+                self.include_mil1553 = True
 
         mock_inputs = MockInputs()
 
         with patch('builtins.open', mock_open()), \
              patch('json.dump'), \
-             patch('common.authenticate', return_value=mock_inputs) as mock_auth:
+             patch('ing_lib.common.authenticate', return_value=mock_inputs) as mock_auth:
             
             args = [
                 'https://test-server.example.com',
@@ -265,6 +281,10 @@ class TestProjConfigBackup:
                 self.filter_retired = True
                 self.include_vis = True
                 self.include_cs = True
+                self.include_cmds = True
+                self.include_eha = True
+                self.include_evr = True
+                self.include_mil1553 = True
 
         mock_inputs = MockInputs()
 
@@ -285,8 +305,8 @@ class TestProjConfigBackup:
                     return mock_versions
             return []
 
-        with patch('project_config.ingenium_rest_get_paginated', side_effect=mock_paginated_side_effect), \
-                patch('project_config.ingenium_rest_get', return_value=[]):
+        with patch('ing_lib.project_config.ingenium_rest_get_paginated', side_effect=mock_paginated_side_effect), \
+                patch('ing_lib.project_config.ingenium_rest_get', return_value=[]):
 
             result = get_source_dictionaries('https://test-server.example.com', 'v3', mock_inputs)
 
@@ -312,6 +332,10 @@ class TestProjConfigBackup:
                 self.filter_retired = True
                 self.include_vis = True
                 self.include_cs = True
+                self.include_cmds = True
+                self.include_eha = True
+                self.include_evr = True
+                self.include_mil1553 = True
 
         mock_inputs = MockInputs()
 
@@ -323,8 +347,8 @@ class TestProjConfigBackup:
                     return mock_versions
             return []
 
-        with patch('project_config.ingenium_rest_get_paginated', side_effect=mock_paginated_side_effect), \
-                patch('project_config.ingenium_rest_get', side_effect=Exception("Network error")):
+        with patch('ing_lib.project_config.ingenium_rest_get_paginated', side_effect=mock_paginated_side_effect), \
+                patch('ing_lib.project_config.ingenium_rest_get', side_effect=Exception("Network error")):
             
             # Should not raise exception but log warning
             result = get_source_dictionaries('https://test-server.example.com', 'v4', mock_inputs)
@@ -335,8 +359,7 @@ class TestProjConfigBackup:
     def test_main_with_ssl_ca_bundle(self, comprehensive_server_mock, mock_user_input):
         """Test main execution with SSL CA bundle."""
         with patch('builtins.open', mock_open()), \
-             patch('json.dump'), \
-             patch('common.ssl_verify') as mock_ssl_verify:
+             patch('json.dump'):
             
             args = [
                 'https://test-server.example.com',
@@ -359,12 +382,16 @@ class TestProjConfigBackup:
                 self.filter_retired = True
                 self.include_vis = True
                 self.include_cs = True
+                self.include_cmds = True
+                self.include_eha = True
+                self.include_evr = True
+                self.include_mil1553 = True
 
         mock_inputs = MockInputs()
 
         with patch('builtins.open', mock_open()), \
              patch('json.dump'), \
-             patch('common.authenticate', return_value=mock_inputs) as mock_auth, \
+             patch('ing_lib.common.authenticate', return_value=mock_inputs) as mock_auth, \
              patch('getpass.getpass', return_value='test_password'):
             
             args = [

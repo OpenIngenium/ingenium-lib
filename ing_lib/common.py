@@ -7,7 +7,7 @@ Authors:
 """
 
 ##################################################################### Imports
-from logs import get_logger
+from ing_lib.logs import get_logger
 import datetime
 import requests
 import json

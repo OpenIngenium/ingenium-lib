@@ -2,16 +2,18 @@
 Tests for ProjConfigRestore.py
 """
 
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import pytest
 import json
 import tempfile
-import os
 from unittest.mock import patch, MagicMock, mock_open
-import sys
 
 # Import the module under test
 from apps.ProjConfigRestore import get_input, restore_dictionaries, main
-import common
+import ing_lib.common as common
 
 
 class TestProjConfigRestore:
@@ -179,7 +181,8 @@ class TestProjConfigRestore:
 
     def test_main_authentication_failure(self, mock_user_input):
         """Test main execution with authentication failure."""
-        with patch('common.authenticate', return_value=False):
+        with patch('ing_lib.common.authenticate', return_value=False), \
+             patch('getpass.getpass', return_value='fake_password'):
             
             args = [
                 'https://test-server.example.com',
