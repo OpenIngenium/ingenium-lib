@@ -7,11 +7,11 @@ Authors:
 
 ##################################################### Imports ######################################################
 import logging
-from logs import init_console_logger,get_logger
+from ing_lib.logs import init_console_logger,get_logger
 init_console_logger()
 
-import common
-from project_config import get_dictionary_versions,get_dictionary,get_custom_scripts,get_vnv_vis,get_dictionary_element
+import ing_lib.common as common
+from ing_lib.project_config import get_dictionary_versions,get_dictionary,get_custom_scripts,get_vnv_vis,get_dictionary_element
 import argparse
 import getpass
 import urllib3
@@ -69,12 +69,30 @@ def get_input(args=[]):
                         help='Whether to include V&V information in the backup')
     parser.add_argument('--include_cs', action='store_true',
                         help='Whether to include Custom Scripts information in the backup')
-
+    parser.add_argument('--include_cmds', action='store_true',
+                        help='Whether to include CMDs in the backup')
+    parser.add_argument('--include_eha', action='store_true',
+                        help='Whether to include EHA (channels) in the backup')
+    parser.add_argument('--include_evr', action='store_true',
+                        help='Whether to include EVRs in the backup')
+    parser.add_argument('--include_mil1553', action='store_true',
+                        help='Whether to include MIL1553 in the backup')
+    parser.add_argument('--include_all', action='store_true',
+                        help='Include all dictionary content (cmds, eha, evr, mil1553, vis, custom scripts)')
 
     if len(args) > 0:
         inputs = parser.parse_args(args)
     else:
         inputs = parser.parse_args()
+
+    # If include_all is set, enable all include flags
+    if inputs.include_all:
+        inputs.include_cmds = True
+        inputs.include_eha = True
+        inputs.include_evr = True
+        inputs.include_mil1553 = True
+        inputs.include_vis = True
+        inputs.include_cs = True
 
     # Setup debug logging (if desired)
     if inputs.debug:
@@ -144,6 +162,15 @@ def get_source_dictionaries(server, api_version, inputs):
                                                                                'mil1553': []}
 
             for sub_dict in ['cmds', 'evrs', 'channels', 'mil1553']:
+                # Check if this sub-dictionary type should be included based on flags
+                if sub_dict == 'cmds' and not inputs.include_cmds:
+                    continue
+                if sub_dict == 'channels' and not inputs.include_eha:
+                    continue
+                if sub_dict == 'evrs' and not inputs.include_evr:
+                    continue
+                if sub_dict == 'mil1553' and not inputs.include_mil1553:
+                    continue
 
                 # First grab the master list of dictionary elements
                 # This is only required in v3 of the PC API
