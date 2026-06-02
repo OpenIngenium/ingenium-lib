@@ -9,9 +9,9 @@ Authors:
 
 ##################################################################### Imports
 import requests
-from common import _auth_header,dictionary_endpoint,get_ssl_verify
-from common import IngeniumLibError,response_handler,ingenium_rest_get,ingenium_rest_get_paginated
-from logs import get_logger
+from ing_lib.common import _auth_header,dictionary_endpoint,get_ssl_verify
+from ing_lib.common import IngeniumLibError,response_handler,ingenium_rest_get,ingenium_rest_get_paginated
+from ing_lib.logs import get_logger
 
 ##################################################### Functions ######################################################
 
@@ -419,6 +419,112 @@ def create_dictionary_content(server, flight_sse, content, dictionary_version, d
         raise IngeniumLibError(msg)
 
     return data
+
+
+def update_dictionary_element(server, dictionary, flight_sse, dict_type, element_name, content, api_version='v4'):
+    """
+    Updates a single dictionary element. Note only compatible with V4 of the API
+
+    Parameters
+    ----------
+    server: str
+        Ingenium Server (e.g. https://ingenium-example.com) without a trailing slash
+
+    dictionary: str
+        The dictionary version to update
+
+    flight_sse: str
+        Either sse or flight
+
+    dict_type: str
+        cmds, evrs, channels, mil1553
+
+    element_name: str
+        The name of the dictionary element to update
+
+    content: dict
+        Dictionary element content following the appropriate schema
+
+    Returns
+    -------
+    data: dict
+        JSON object containing the updated dictionary element
+    """
+
+    if dict_type not in ['cmds', 'evrs', 'channels', 'mil1553']:
+        msg = f"Unknown dictionary type: {dict_type}. Supported options: cmds, evrs, channels, mil1553."
+        logger.error(msg)
+        raise IngeniumLibError(msg)
+
+    endpoint = f'{server}{dictionary_endpoint}{api_version}/dictionaries/{flight_sse}/versions/{dictionary}/{dict_type}/{element_name}'
+
+    try:
+        res = requests.patch(endpoint, headers=_auth_header(),
+                             verify=get_ssl_verify(),
+                             json=content)
+    except requests.ConnectionError:
+        msg = f"Failed to communicate with: {server}"
+        logger.error(msg)
+        raise IngeniumLibError(msg)
+
+    if response_handler(res):
+        data = res.json()
+    else:
+        msg = f"Response not completed successfully to {endpoint}"
+        logger.error(msg)
+        raise IngeniumLibError(msg)
+
+    return data
+
+
+def delete_dictionary_element(server, dictionary, flight_sse, dict_type, element_name, api_version='v4'):
+    """
+    Deletes a single dictionary element. Note only compatible with V4 of the API
+
+    Parameters
+    ----------
+    server: str
+        Ingenium Server (e.g. https://ingenium-example.com) without a trailing slash
+
+    dictionary: str
+        The dictionary version to update
+
+    flight_sse: str
+        Either sse or flight
+
+    dict_type: str
+        cmds, evrs, channels, mil1553
+
+    element_name: str
+        The name of the dictionary element to delete
+
+    Returns
+    -------
+    None
+    """
+
+    if dict_type not in ['cmds', 'evrs', 'channels', 'mil1553']:
+        msg = f"Unknown dictionary type: {dict_type}. Supported options: cmds, evrs, channels, mil1553."
+        logger.error(msg)
+        raise IngeniumLibError(msg)
+
+    endpoint = f'{server}{dictionary_endpoint}{api_version}/dictionaries/{flight_sse}/versions/{dictionary}/{dict_type}/{element_name}'
+
+    try:
+        res = requests.delete(endpoint, headers=_auth_header(),
+                              verify=get_ssl_verify())
+    except requests.ConnectionError:
+        msg = f"Failed to communicate with: {server}"
+        logger.error(msg)
+        raise IngeniumLibError(msg)
+
+    if response_handler(res):
+        pass
+        # Note no action is required if 204 is received (empty JSON)
+    else:
+        msg = f"Response not completed successfully to {endpoint}"
+        logger.error(msg)
+        raise IngeniumLibError(msg)
 
 
 def create_custom_script(server, content):
