@@ -7,12 +7,12 @@ Authors:
 
 ##################################################### Imports ######################################################
 import logging
-from logs import init_console_logger
+from ing_lib.logs import init_console_logger
 init_console_logger(logging.INFO)
 
-import common
-from project_config import get_dictionary_versions, delete_dictionary_version, get_vnv_vis, get_custom_scripts
-from project_config import delete_vnv_vi, delete_custom_script
+import ing_lib.common as common
+from ing_lib.project_config import get_dictionary_versions, delete_dictionary_version, get_vnv_vis, get_custom_scripts
+from ing_lib.project_config import delete_vnv_vi, delete_custom_script
 import argparse
 import getpass
 import urllib3
