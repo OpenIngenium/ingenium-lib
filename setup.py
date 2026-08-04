@@ -12,12 +12,12 @@ setup(
     name='ing_lib',
     packages=find_packages(),
     install_requires=get_dependencies(),
-    description='Python libraries for JPL systems engineering',
+    description='Python libraries supporting OpenIngenium',
     version='0.1.0',
-    python_requires='>=3.09',
+    python_requires='>=3.9',
     entry_points = {
     },
     author='Christopher Swan',
     author_email='open-ingenium@jpl.nasa.gov',
-    url='https://github.jpl.nasa.gov/Ingenium/ingenium-lib'
+    url='https://github.com/OpenIngenium/ingenium-lib'
 )
