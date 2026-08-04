@@ -213,7 +213,7 @@ class TestProjConfigRestore:
         with patch('builtins.open', mock_open()) as mock_file, \
              patch('json.load', return_value=sample_backup_data), \
              patch('apps.ProjConfigRestore.restore_dictionaries'), \
-             patch('common.ssl_verify') as mock_ssl_verify:
+             patch('ing_lib.common.set_ssl_verify') as mock_set_ssl_verify:
             
             # Test with ignore_ssl_error
             args = [
@@ -225,7 +225,7 @@ class TestProjConfigRestore:
             main(args)
             
             # Verify SSL verification was configured
-            assert mock_ssl_verify is not None
+            mock_set_ssl_verify.assert_called_once_with(False)
 
     def test_restore_dictionaries_empty_data(self, comprehensive_server_mock):
         """Test restoration with empty backup data."""

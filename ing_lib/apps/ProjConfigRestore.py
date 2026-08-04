@@ -140,14 +140,14 @@ def main(args=[]):
 
     # if ssl_ca_bundle is specified, it will take precedence over ignore_ssl_error
     if inputs.ssl_ca_bundle is not None:
-        common.ssl_verify = inputs.ssl_ca_bundle
+        common.set_ssl_verify(inputs.ssl_ca_bundle)
     else:
-        common.ssl_verify = not inputs.ignore_ssl_error
-        if not common.ssl_verify:
+        common.set_ssl_verify(not inputs.ignore_ssl_error)
+        if not common.get_ssl_verify():
             # To suppress SSL warnings
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-    logger.debug(f"Ingenium.ssl_verify:{common.ssl_verify}")
+    logger.debug(f"Ingenium.ssl_verify:{common.get_ssl_verify()}")
 
     if inputs.username:
         username = inputs.username

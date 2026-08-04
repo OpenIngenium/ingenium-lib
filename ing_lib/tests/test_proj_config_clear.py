@@ -166,9 +166,10 @@ class TestProjConfigClear:
         """Test main execution with SSL CA bundle."""
         with patch('builtins.input', return_value='no'), \
              patch('getpass.getpass', return_value='test_password'), \
-             patch('getpass.getuser', return_value='test_user'):
+             patch('getpass.getuser', return_value='test_user'), \
+             patch('ing_lib.common.set_ssl_verify') as mock_set_ssl_verify:
             args = ['https://test-server.example.com', '--ssl_ca_bundle', '/path/to/ca.pem']
             main(args)
 
             # Verify SSL CA bundle setting was correctly set
-            assert common.ssl_verify == '/path/to/ca.pem' 
+            mock_set_ssl_verify.assert_called_once_with('/path/to/ca.pem') 
