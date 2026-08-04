@@ -10,7 +10,7 @@ Authors:
 
 from collections import OrderedDict
 import traceback
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 import json
 import os
@@ -287,7 +287,7 @@ def verify_wait_telemetry(query: dict, telemetry_query_func: callable, start_tim
 
     # Set the boundaries of the query
     if start_time is None:
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
     query_end_time = start_time + timedelta(seconds=timeout)
 
@@ -309,7 +309,7 @@ def verify_wait_telemetry(query: dict, telemetry_query_func: callable, start_tim
         # If the timeout is in the past - set query_timeout to True
         # This feeds into the evaluation of WAIT and NOT_PRESENT conditions
         # It will also abort the loop in cases of timeouts
-        if datetime.utcnow() > time_out_time:
+        if datetime.now(timezone.utc) > time_out_time:
             query_timeout = True
 
         # Query all the channels returning on collection of any data

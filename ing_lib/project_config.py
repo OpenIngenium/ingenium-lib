@@ -677,7 +677,7 @@ def create_vnv_vis(server, content):
     else:
         msg = f"Response not completed successfully to {endpoint}"
         logger.error(msg)
-        raise common.IngeniumLibError(msg)
+        raise IngeniumLibError(msg)
 
     return data
 

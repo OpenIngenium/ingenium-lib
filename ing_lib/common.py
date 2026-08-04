@@ -199,11 +199,11 @@ def generate_token(private_pem, username=None, scopes=None, force=False):
 
     current_time = datetime.datetime.now(datetime.timezone.utc)
 
-    if not _store.get('refresh_time'):
-        _refresh_time = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=3600)
+    if not get_refresh_time():
+        set_refresh_time(current_time - datetime.timedelta(seconds=3600))
 
     # Check how much time is remaining on the current token
-    token_time = (current_time - _store.get('refresh_time')).total_seconds()
+    token_time = (current_time - get_refresh_time()).total_seconds()
 
     # Update the token if force = True or the token is older than the refresh duration
     if force or token_time > _TOKEN_REFRESH_DURATION:
@@ -247,7 +247,7 @@ def generate_token(private_pem, username=None, scopes=None, force=False):
             raise IngeniumLibError(msg)
 
         # Convert the token to a string
-        token_str = encoded_token.decode('utf-8')
+        token_str = encoded_token if isinstance(encoded_token, str) else encoded_token.decode('utf-8')
 
         msg = f"Created token:{token_str} for user:{user_name}, scopes:{permissions}, valid from:{start_time} -{end_time}"
         logger.debug(msg)
@@ -363,7 +363,7 @@ def refresh_auth(server, force=False):
         logger.debug('Forced refresh of token.')
         renew_header = {
             'Content-Type': 'application/json',
-            'Authorization': _store.get('token')
+            'Authorization': get_token()
         }
 
         try:
