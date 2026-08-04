@@ -96,8 +96,8 @@ class TestCommon:
         
         # Set up token
         common.set_token("test_token")
-        common.set_refresh_time(datetime.datetime.now(datetime.UTC))
-        common.ssl_verify = True
+        common.set_refresh_time(datetime.datetime.now(datetime.timezone.utc))
+        common.set_ssl_verify(True)
         
         result = common.ingenium_rest_get(MOCK_API_ENDPOINT)
         
@@ -121,6 +121,7 @@ class TestCommon:
         mock_get.return_value = mock_response
         
         common.set_token("test_token")
+        common.set_refresh_time(datetime.datetime.now(datetime.timezone.utc))
         
         # Should raise IngeniumLibError on failure
         with pytest.raises(common.IngeniumLibError) as exc_info:
@@ -158,6 +159,7 @@ class TestCommon:
         mock_get.return_value = mock_response
         
         common.set_token("test_token")
+        common.set_refresh_time(datetime.datetime.now(datetime.timezone.utc))
         common.set_ssl_verify(False)
         
         result = common.ingenium_rest_get(MOCK_API_ENDPOINT)
@@ -176,6 +178,7 @@ class TestCommon:
         mock_get.side_effect = requests.ConnectionError("Connection failed")
         
         common.set_token("test_token")
+        common.set_refresh_time(datetime.datetime.now(datetime.timezone.utc))
         
         # Should raise the ConnectionError, not handle it gracefully
         with pytest.raises(requests.ConnectionError):
@@ -198,6 +201,7 @@ class TestCommon:
         mock_get.return_value = mock_response
         
         common.set_token("test_token")
+        common.set_refresh_time(datetime.datetime.now(datetime.timezone.utc))
         
         # Should raise the JSON decode error
         with pytest.raises(ValueError):
@@ -237,7 +241,8 @@ class TestCommon:
         mock_get.return_value = mock_response
         
         common.set_token("test_token")
-        common.ssl_verify = True
+        common.set_ssl_verify(True)
+        common.set_refresh_time(datetime.datetime.now(datetime.timezone.utc))
         
         result = common.ingenium_rest_get_paginated(MOCK_API_ENDPOINT)
         
@@ -284,7 +289,7 @@ class TestCommon:
         # Set existing token
         common.set_token("Bearer old_token")
         common.set_ssl_verify(True)
-        common.set_refresh_time(datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=3000))
+        common.set_refresh_time(datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=3000))
         
         result = common.refresh_auth(MOCK_BASE_URL, force=True)
         

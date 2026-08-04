@@ -1,7 +1,7 @@
 # ingenium-lib
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Python Version](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![Python Version](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
 Libraries and scripts to interact with and support [Ingenium](https://github.com/OpenIngenium) operations. This repository provides the `ing_lib` Python package and a set of command-line utilities for managing Ingenium project configurations, venues, test step data, and AMPCS dictionaries.
 
@@ -42,4 +42,4 @@ pip install -r requirements.txt
 pip install .
 ```
 
-This will install the package and its dependencies (e.g., `rich`). The package requires Python 3.9 or higher.
+This will install the package and its dependencies (e.g., `rich`). The package requires Python 3.10 or higher.

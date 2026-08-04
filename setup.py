@@ -14,7 +14,7 @@ setup(
     install_requires=get_dependencies(),
     description='Python libraries supporting OpenIngenium',
     version='0.1.0',
-    python_requires='>=3.9',
+    python_requires='>=3.10',
     entry_points = {
     },
     author='Christopher Swan',

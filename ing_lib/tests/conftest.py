@@ -37,7 +37,7 @@ def mock_common_globals():
     mock_store = MagicMock()
     mock_store.get.side_effect = lambda key: {
         'token': 'Bearer mock_token_12345',
-        'refresh_time': datetime.datetime.now(datetime.UTC),
+        'refresh_time': datetime.datetime.now(datetime.timezone.utc),
         'ssl_verify': True
     }.get(key)
     
@@ -45,7 +45,7 @@ def mock_common_globals():
          patch('common._store', mock_store), \
          patch('common.get_ssl_verify', return_value=True), \
          patch('common.get_token', return_value='Bearer mock_token_12345'), \
-         patch('common.get_refresh_time', return_value=datetime.datetime.now(datetime.UTC)), \
+         patch('common.get_refresh_time', return_value=datetime.datetime.now(datetime.timezone.utc)), \
          patch('common._stale_token', return_value=False):
         yield
 
