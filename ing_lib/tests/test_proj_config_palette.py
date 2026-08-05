@@ -835,11 +835,12 @@ class TestProjConfigPalette:
         # Verify SSL warnings were disabled
         mock_disable_warnings.assert_called_once()
 
-    @patch('ing_lib.common.authenticate')
-    @patch('getpass.getpass')
-    @patch('apps.ProjConfigPalette.get_palette_info')
     @patch('apps.ProjConfigPalette.write_palette_excel')
-    def test_main_ssl_ca_bundle(self, mock_write_excel, mock_get_palette, mock_auth, mock_getpass):
+    @patch('apps.ProjConfigPalette.get_palette_info')
+    @patch('getpass.getpass')
+    @patch('ing_lib.common.authenticate')
+    @patch('ing_lib.common.set_ssl_verify')
+    def test_main_ssl_ca_bundle(self, mock_set_ssl_verify, mock_auth, mock_getpass, mock_get_palette, mock_write_excel):
         """Test main function with SSL CA bundle specified."""
         mock_auth.return_value = True
         mock_get_palette.return_value = {'built_in': [], 'custom': []}
@@ -855,7 +856,7 @@ class TestProjConfigPalette:
         ProjConfigPalette.main(args)
         
         # Verify SSL verification was set to use CA bundle
-        assert common.ssl_verify == '/path/to/ca-bundle.crt'
+        mock_set_ssl_verify.assert_called_once_with('/path/to/ca-bundle.crt')
 
     def test_main_exception_handling(self):
         """Test main function exception handling."""

@@ -197,13 +197,13 @@ def generate_token(private_pem, username=None, scopes=None, force=False):
 
     """
 
-    current_time = datetime.datetime.now(datetime.UTC)
+    current_time = datetime.datetime.now(datetime.timezone.utc)
 
-    if not _store.get('refresh_time'):
-        _refresh_time = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=3600)
+    if not get_refresh_time():
+        set_refresh_time(current_time - datetime.timedelta(seconds=3600))
 
     # Check how much time is remaining on the current token
-    token_time = (current_time - _store.get('refresh_time')).total_seconds()
+    token_time = (current_time - get_refresh_time()).total_seconds()
 
     # Update the token if force = True or the token is older than the refresh duration
     if force or token_time > _TOKEN_REFRESH_DURATION:
@@ -247,7 +247,7 @@ def generate_token(private_pem, username=None, scopes=None, force=False):
             raise IngeniumLibError(msg)
 
         # Convert the token to a string
-        token_str = encoded_token.decode('utf-8')
+        token_str = encoded_token if isinstance(encoded_token, str) else encoded_token.decode('utf-8')
 
         msg = f"Created token:{token_str} for user:{user_name}, scopes:{permissions}, valid from:{start_time} -{end_time}"
         logger.debug(msg)
@@ -325,7 +325,7 @@ def authenticate(server, username=None, password=None, force=False, rsa=False):
 
     if response_handler(logon):
         set_token(f"Bearer {json.loads(logon.text)['access_token']}")
-        set_refresh_time(datetime.datetime.now(datetime.UTC))
+        set_refresh_time(datetime.datetime.now(datetime.timezone.utc))
 
         msg = f"Successful login to {server} as {username} with token: {get_token()}"
         logger.debug(msg)
@@ -357,13 +357,13 @@ def refresh_auth(server, force=False):
     if refresh_time is None:
         token_time_remaining = 0  # Force refresh if no refresh time stored
     else:
-        token_time_remaining = (datetime.datetime.now(datetime.UTC) - refresh_time).total_seconds()
+        token_time_remaining = (datetime.datetime.now(datetime.timezone.utc) - refresh_time).total_seconds()
 
     if force or _stale_token():
         logger.debug('Forced refresh of token.')
         renew_header = {
             'Content-Type': 'application/json',
-            'Authorization': _store.get('token')
+            'Authorization': get_token()
         }
 
         try:
@@ -378,7 +378,7 @@ def refresh_auth(server, force=False):
 
         if response_handler(refresh):
             set_token(f"Bearer {json.loads(refresh.text)['access_token']}")
-            set_refresh_time(datetime.datetime.now(datetime.UTC))
+            set_refresh_time(datetime.datetime.now(datetime.timezone.utc))
             msg = f"Successfully refreshed token with: {server}"
             logger.debug(msg)
             return True
@@ -408,7 +408,7 @@ def get_ssl_verify():
 def _auth_header():
     token = get_token()
     if not token:
-        raise IngeniumLibError()
+        raise IngeniumLibError("Authentication token is not set. Please authenticate before making API requests.")
     return {"Authorization": token}
 
 
@@ -416,7 +416,7 @@ def _stale_token():
     token = get_token()
     if token is None or get_refresh_time() is None:
         return True
-    elapsed = (datetime.datetime.now(datetime.UTC) - get_refresh_time()).total_seconds()
+    elapsed = (datetime.datetime.now(datetime.timezone.utc) - get_refresh_time()).total_seconds()
     return elapsed > _TOKEN_REFRESH_DURATION
 
 
