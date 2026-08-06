@@ -17,6 +17,9 @@ Usage Examples:
     # Upload XTCE dictionary (may contain both commands and telemetry)
     python ProjConfigLoadDict.py https://ingenium.project.jpl.nasa.gov my_dict_v1.0 flight --format xtce spacecraft.xml
     
+    # With custom description for the dictionary version
+    python ProjConfigLoadDict.py https://ingenium.project.jpl.nasa.gov my_dict_v1.0 flight --format ampcs cmd_dict.xml --description "Flight software v2.3.1 command dictionary"
+    
     # With debug logging and RSA authentication
     python ProjConfigLoadDict.py https://ingenium.project.jpl.nasa.gov my_dict_v1.0 flight --format ampcs cmd_dict.xml --debug --rsa
 
@@ -1170,6 +1173,10 @@ def parse_arguments():
     parser.add_argument('--ssl_ca_bundle', 
                        type=str,
                        help='Path to the SSL CA bundle. If provided, this will override ignore_ssl_error.')
+    parser.add_argument('--description',
+                       type=str,
+                       default='Imported from XML dictionary',
+                       help='Description for the dictionary version (default: "Imported from XML dictionary")')
     
     return parser.parse_args()
 
@@ -1230,7 +1237,7 @@ def main():
     
     # Ensure dictionary version exists
     if not ensure_dictionary_version_exists(inputs.server, inputs.flight_sse, 
-                                          inputs.dictionary_version):
+                                          inputs.dictionary_version, inputs.description):
         logger.error("Failed to ensure dictionary version exists")
         sys.exit(1)
         
