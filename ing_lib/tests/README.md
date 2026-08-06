@@ -16,7 +16,7 @@ This directory contains comprehensive tests for the ingenium-lib project using p
 - **ProjConfigClear** - Tests for clearing project configurations with user confirmation
 - **ProjConfigRestore** - Tests for restoring project configurations from backup files
 - **ProjConfigCreateUpdateCS** - Tests for custom script creation/update including XML/JSON parsing
-- **ProjConfigLoadAMPCSDict** - Tests for loading AMPCS dictionary files
+- **ProjConfigLoadDict** - Tests for loading dictionary files (AMPCS and XTCE formats)
 
 ### Core Modules Tested
 - **common.py** - Tests for common utilities, authentication, and REST operations
