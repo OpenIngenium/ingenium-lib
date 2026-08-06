@@ -23,7 +23,7 @@ from apps.ProjConfigClear import main as clear_main, clear_project_configuration
 from apps.ProjConfigRestore import main as restore_main, restore_dictionaries
 from apps.ProjConfigCreateUpdateCS import main as create_cs_main
 from apps.ProjConfigPalette import main as palette_main
-from apps.ProjConfigLoadAMPCSDict import main as load_ampcs_main
+from apps.ProjConfigLoadDict import main as load_dict_main
 import ing_lib.common as common
 
 
@@ -400,18 +400,19 @@ class TestAMPCSDictionaryBackupWorkflow:
                 f.write(ch_dict_content)
             
             # Step 1: Load AMPCS dictionaries
-            with patch('apps.ProjConfigLoadAMPCSDict.ensure_dictionary_version_exists', return_value=True), \
-                 patch('apps.ProjConfigLoadAMPCSDict.upload_dictionary_content', return_value=True):
+            with patch('apps.ProjConfigLoadDict.ensure_dictionary_version_exists', return_value=True), \
+                 patch('apps.ProjConfigLoadDict.upload_dictionary_content', return_value=True):
                 
                 with patch('sys.argv', [
                     'script',
                     'https://test-server.example.com',
                     'v1.0',
                     'flight',
+                    '--format', 'ampcs',
                     cmd_dict_file,
                     ch_dict_file
                 ]):
-                    load_ampcs_main()
+                    load_dict_main()
             
             # Step 2: Backup the loaded dictionaries
             backup_file = os.path.join(temp_dir, 'backup.json')
