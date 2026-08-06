@@ -1,5 +1,5 @@
 """
-Tests for ProjConfigLoadAMPCSDict.py
+Tests for ProjConfigLoadDict.py (formerly ProjConfigLoadAMPCSDict.py)
 """
 
 import pytest
@@ -9,18 +9,19 @@ from unittest.mock import patch, MagicMock
 import sys
 
 # Import the module under test
-from apps.ProjConfigLoadAMPCSDict import (
-    detect_dictionary_type, parse_command_dictionary, parse_channel_dictionary,
+from apps.ProjConfigLoadDict import (
+    detect_ampcs_type, parse_command_dictionary, parse_channel_dictionary,
     parse_evr_dictionary, parse_mil1553_dictionary, ensure_dictionary_version_exists,
-    upload_dictionary_content, process_xml_file, parse_arguments, main
+    upload_dictionary_content, process_xml_file, parse_arguments, main,
+    detect_xtce_type, parse_xtce_command_dictionary, parse_xtce_channel_dictionary
 )
 
 
-class TestProjConfigLoadAMPCSDict:
-    """Test class for ProjConfigLoadAMPCSDict functionality."""
+class TestProjConfigLoadDict:
+    """Test class for ProjConfigLoadDict functionality."""
     
-    def test_detect_dictionary_type_command(self):
-        """Test detection of command dictionary type."""
+    def test_detect_ampcs_dictionary_type_command(self):
+        """Test detection of AMPCS command dictionary type."""
         xml_content = """<?xml version="1.0"?>
 <command_dictionary>
     <command_definitions>
@@ -32,13 +33,13 @@ class TestProjConfigLoadAMPCSDict:
             temp_file = f.name
         
         try:
-            dict_type = detect_dictionary_type(temp_file)
+            dict_type = detect_ampcs_type(temp_file)
             assert dict_type == 'commands'
         finally:
             os.remove(temp_file)
 
-    def test_detect_dictionary_type_channel(self):
-        """Test detection of channel dictionary type."""
+    def test_detect_ampcs_dictionary_type_channel(self):
+        """Test detection of AMPCS channel dictionary type."""
         xml_content = """<?xml version="1.0"?>
 <telemetry_dictionary>
     <telemetry_definitions>
@@ -50,13 +51,13 @@ class TestProjConfigLoadAMPCSDict:
             temp_file = f.name
         
         try:
-            dict_type = detect_dictionary_type(temp_file)
+            dict_type = detect_ampcs_type(temp_file)
             assert dict_type == 'channels'
         finally:
             os.remove(temp_file)
 
-    def test_detect_dictionary_type_evr(self):
-        """Test detection of EVR dictionary type."""
+    def test_detect_ampcs_dictionary_type_evr(self):
+        """Test detection of AMPCS EVR dictionary type."""
         xml_content = """<?xml version="1.0"?>
 <evr_dictionary>
     <evrs>
@@ -68,13 +69,13 @@ class TestProjConfigLoadAMPCSDict:
             temp_file = f.name
         
         try:
-            dict_type = detect_dictionary_type(temp_file)
+            dict_type = detect_ampcs_type(temp_file)
             assert dict_type == 'evrs'
         finally:
             os.remove(temp_file)
 
-    def test_detect_dictionary_type_mil1553(self):
-        """Test detection of MIL-STD-1553 dictionary type."""
+    def test_detect_ampcs_dictionary_type_mil1553(self):
+        """Test detection of AMPCS MIL-STD-1553 dictionary type."""
         xml_content = """<?xml version="1.0"?>
 <mil1553_dictionary>
     <mil1553_signals>
@@ -86,13 +87,13 @@ class TestProjConfigLoadAMPCSDict:
             temp_file = f.name
         
         try:
-            dict_type = detect_dictionary_type(temp_file)
+            dict_type = detect_ampcs_type(temp_file)
             assert dict_type == 'mil1553'
         finally:
             os.remove(temp_file)
 
-    def test_detect_dictionary_type_unknown(self):
-        """Test detection of unknown dictionary type."""
+    def test_detect_ampcs_dictionary_type_unknown(self):
+        """Test detection of unknown AMPCS dictionary type."""
         xml_content = """<?xml version="1.0"?>
 <unknown_dictionary>
 </unknown_dictionary>"""
@@ -102,7 +103,7 @@ class TestProjConfigLoadAMPCSDict:
             temp_file = f.name
         
         try:
-            dict_type = detect_dictionary_type(temp_file)
+            dict_type = detect_ampcs_type(temp_file)
             assert dict_type is None
         finally:
             os.remove(temp_file)
@@ -295,8 +296,8 @@ class TestProjConfigLoadAMPCSDict:
         finally:
             os.remove(temp_file)
 
-    @patch('apps.ProjConfigLoadAMPCSDict.get_dictionary_versions')
-    @patch('apps.ProjConfigLoadAMPCSDict.create_dictionary_version')
+    @patch('apps.ProjConfigLoadDict.get_dictionary_versions')
+    @patch('apps.ProjConfigLoadDict.create_dictionary_version')
     def test_ensure_dictionary_version_exists_new(self, mock_create, mock_get_versions):
         """Test ensuring dictionary version exists when it doesn't."""
         mock_get_versions.return_value = []  # No existing versions
@@ -309,7 +310,7 @@ class TestProjConfigLoadAMPCSDict:
         assert result is True
         mock_create.assert_called_once()
 
-    @patch('apps.ProjConfigLoadAMPCSDict.get_dictionary_versions')
+    @patch('apps.ProjConfigLoadDict.get_dictionary_versions')
     def test_ensure_dictionary_version_exists_existing(self, mock_get_versions):
         """Test ensuring dictionary version exists when it already does."""
         mock_get_versions.return_value = [
@@ -322,7 +323,7 @@ class TestProjConfigLoadAMPCSDict:
         
         assert result is True
 
-    @patch('apps.ProjConfigLoadAMPCSDict.create_dictionary_content')
+    @patch('apps.ProjConfigLoadDict.create_dictionary_content')
     def test_upload_dictionary_content_success(self, mock_create_content):
         """Test successful upload of dictionary content."""
         mock_create_content.return_value = True
@@ -348,9 +349,9 @@ class TestProjConfigLoadAMPCSDict:
         assert result is True  # Should succeed with empty content
 
     @patch('os.path.exists')
-    @patch('apps.ProjConfigLoadAMPCSDict.detect_dictionary_type')
-    @patch('apps.ProjConfigLoadAMPCSDict.parse_command_dictionary')
-    @patch('apps.ProjConfigLoadAMPCSDict.upload_dictionary_content')
+    @patch('apps.ProjConfigLoadDict.detect_dictionary_type')
+    @patch('apps.ProjConfigLoadDict.parse_command_dictionary')
+    @patch('apps.ProjConfigLoadDict.upload_dictionary_content')
     def test_process_xml_file_success(self, mock_upload, mock_parse, mock_detect, mock_exists):
         """Test successful processing of XML file."""
         mock_exists.return_value = True
@@ -359,7 +360,7 @@ class TestProjConfigLoadAMPCSDict:
         mock_upload.return_value = True
         
         result = process_xml_file(
-            '/path/to/dict.xml', 'https://test-server.example.com', 'flight', 'v1.0'
+            '/path/to/dict.xml', 'https://test-server.example.com', 'flight', 'v1.0', 'ampcs'
         )
         
         assert result is True
@@ -373,7 +374,7 @@ class TestProjConfigLoadAMPCSDict:
         mock_exists.return_value = False
         
         result = process_xml_file(
-            '/nonexistent/dict.xml', 'https://test-server.example.com', 'flight', 'v1.0'
+            '/nonexistent/dict.xml', 'https://test-server.example.com', 'flight', 'v1.0', 'ampcs'
         )
         
         assert result is False
@@ -384,6 +385,7 @@ class TestProjConfigLoadAMPCSDict:
             'https://test-server.example.com',
             'v1.0',
             'flight',
+            '--format', 'ampcs',
             'dict1.xml',
             'dict2.xml',
             '--debug',
@@ -396,16 +398,17 @@ class TestProjConfigLoadAMPCSDict:
             assert parsed.server == 'https://test-server.example.com'
             assert parsed.dictionary_version == 'v1.0'
             assert parsed.flight_sse == 'flight'
+            assert parsed.format == 'ampcs'
             assert parsed.xml_files == ['dict1.xml', 'dict2.xml']
             assert parsed.debug is True
             assert parsed.rsa is True
 
-    @patch('apps.ProjConfigLoadAMPCSDict.common.authenticate')
-    @patch('apps.ProjConfigLoadAMPCSDict.getpass.getpass')
+    @patch('apps.ProjConfigLoadDict.common.authenticate')
+    @patch('apps.ProjConfigLoadDict.getpass.getpass')
     @patch('os.getenv')
     @patch('os.path.exists')
-    @patch('apps.ProjConfigLoadAMPCSDict.ensure_dictionary_version_exists')
-    @patch('apps.ProjConfigLoadAMPCSDict.process_xml_file')
+    @patch('apps.ProjConfigLoadDict.ensure_dictionary_version_exists')
+    @patch('apps.ProjConfigLoadDict.process_xml_file')
     def test_main_success(self, mock_process, mock_ensure, mock_exists, mock_getenv,
                          mock_getpass, mock_auth):
         """Test successful main execution."""
@@ -421,6 +424,7 @@ class TestProjConfigLoadAMPCSDict:
             'https://test-server.example.com',
             'v1.0',
             'flight',
+            '--format', 'ampcs',
             'dict.xml'
         ]):
             main()
@@ -429,8 +433,8 @@ class TestProjConfigLoadAMPCSDict:
             mock_ensure.assert_called_once()
             mock_process.assert_called_once()
 
-    @patch('apps.ProjConfigLoadAMPCSDict.common.authenticate')
-    @patch('apps.ProjConfigLoadAMPCSDict.getpass.getpass')
+    @patch('apps.ProjConfigLoadDict.common.authenticate')
+    @patch('apps.ProjConfigLoadDict.getpass.getpass')
     @patch('os.getenv')
     def test_main_authentication_failure(self, mock_getenv, mock_getpass, mock_auth):
         """Test main execution with authentication failure."""
@@ -443,18 +447,19 @@ class TestProjConfigLoadAMPCSDict:
             'https://test-server.example.com',
             'v1.0',
             'flight',
+            '--format', 'ampcs',
             'dict.xml'
         ]), patch('os.path.exists', return_value=True):
             
             with pytest.raises(SystemExit):
                 main()
 
-    @patch('apps.ProjConfigLoadAMPCSDict.common.authenticate')
-    @patch('apps.ProjConfigLoadAMPCSDict.getpass.getpass')
+    @patch('apps.ProjConfigLoadDict.common.authenticate')
+    @patch('apps.ProjConfigLoadDict.getpass.getpass')
     @patch('os.getenv')
     @patch('os.path.exists')
-    @patch('apps.ProjConfigLoadAMPCSDict.ensure_dictionary_version_exists')
-    @patch('apps.ProjConfigLoadAMPCSDict.process_xml_file')
+    @patch('apps.ProjConfigLoadDict.ensure_dictionary_version_exists')
+    @patch('apps.ProjConfigLoadDict.process_xml_file')
     def test_main_partial_failure(self, mock_process, mock_ensure, mock_exists, 
                                  mock_getenv, mock_getpass, mock_auth):
         """Test main execution with partial file processing failure."""
@@ -472,6 +477,7 @@ class TestProjConfigLoadAMPCSDict:
             'https://test-server.example.com',
             'v1.0',
             'flight',
+            '--format', 'ampcs',
             'dict1.xml',
             'dict2.xml'
         ]):
