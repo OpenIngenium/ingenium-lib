@@ -612,44 +612,86 @@ def detect_xtce_type(xml_file: str) -> Optional[str]:
         return None
 
 
+def _get_element_description(element: ET.Element) -> Optional[str]:
+    """
+    Get a description for an XTCE element, preferring the `shortDescription`
+    attribute, and falling back to `LongDescription`/`ShortDescription`
+    child elements (used by some other XTCE dictionaries).
+
+    Args:
+        element: XTCE element (e.g. MetaCommand, Parameter, *ParameterType, *ArgumentType)
+
+    Returns:
+        Description string or None
+    """
+    short_desc_attr = element.get('shortDescription')
+    if short_desc_attr:
+        return short_desc_attr
+
+    long_desc_text = None
+    short_desc_text = None
+    for child in element:
+        local_tag = _strip_ns(child.tag)
+        if local_tag == 'LongDescription' and child.text:
+            long_desc_text = child.text.strip()
+        elif local_tag == 'ShortDescription' and child.text:
+            short_desc_text = child.text.strip()
+
+    return long_desc_text or short_desc_text
+
+
 def parse_xtce_command_dictionary(xml_file: str) -> List[Dict[str, Any]]:
     """
     Parse XTCE command dictionary and convert to OpenAPI format.
-    
+
+    Command names are built as f"{SpaceSystem_leaf_name}__{MetaCommand_name}"
+    (e.g. "SPACESYSTEM__COMMAND_NAME"). Argument types are resolved via each
+    MetaCommand's own SpaceSystem's ArgumentTypeSet (argumentTypeRef). The
+    operations_category is set to the owning SpaceSystem's leaf name.
+    ArgumentType ValidRangeSet/ValidRange elements are extracted into each
+    argument's allowable_ranges as a list of {'min_value', 'max_value'}
+    dicts (values taken from minInclusive/minExclusive and
+    maxInclusive/maxExclusive, per the Ingenium OpenAPI schema which has no
+    inclusive/exclusive distinction). Each argument's description is built
+    as f"{Argument name} - ({ArgumentType short description})", falling
+    back to just the Argument name if the ArgumentType has no description.
+
     Args:
         xml_file: Path to XTCE XML file
-        
+
     Returns:
         List of command objects in OpenAPI format
     """
     commands = []
-    
+
     try:
         tree = ET.parse(xml_file)
         root = tree.getroot()
-        
+
         if _strip_ns(root.tag) != 'SpaceSystem':
             logger.error(f"Not an XTCE SpaceSystem: {xml_file}")
             return commands
-        
-        # Collect all argument types from ArgumentTypeSet
-        arg_types = {}
-        
-        def collect_arg_types(space_system):
+
+        # Phase A: collect ArgumentTypeSet scoped per-SpaceSystem (keyed by SpaceSystem path)
+        arg_types_by_ss: Dict[str, Dict[str, Dict[str, Any]]] = {}
+
+        def collect_arg_types(space_system, ss_path):
+            type_map = {}
+
             for cmd_meta in space_system:
                 if _strip_ns(cmd_meta.tag) != 'CommandMetaData':
                     continue
-                    
+
                 for child in cmd_meta:
                     if _strip_ns(child.tag) == 'ArgumentTypeSet':
                         for arg_type in child:
                             type_name = arg_type.get('name')
                             if not type_name:
                                 continue
-                            
+
                             type_info = {'element': arg_type}
                             local_tag = _strip_ns(arg_type.tag)
-                            
+
                             # Map XTCE types to Ingenium types
                             if local_tag == 'IntegerArgumentType':
                                 signed = arg_type.get('signed', 'true').lower() == 'true'
@@ -682,7 +724,7 @@ def parse_xtce_command_dictionary(xml_file: str) -> List[Dict[str, Any]]:
                                     type_info['enumerations'] = enums
                             else:
                                 type_info['argument_type'] = 'STRING'
-                            
+
                             # Get size in bits
                             for encoding in arg_type:
                                 encoding_tag = _strip_ns(encoding.tag)
@@ -693,61 +735,105 @@ def parse_xtce_command_dictionary(xml_file: str) -> List[Dict[str, Any]]:
                                             type_info['argument_size'] = int(size_in_bits) // 8
                                         except ValueError:
                                             pass
-                            
-                            arg_types[type_name] = type_info
-            
+
+                            # ValidRangeSet -> allowable_ranges
+                            allowable_ranges = []
+                            for range_set in arg_type:
+                                if _strip_ns(range_set.tag) != 'ValidRangeSet':
+                                    continue
+                                for valid_range in range_set:
+                                    if _strip_ns(valid_range.tag) != 'ValidRange':
+                                        continue
+                                    range_obj = {}
+
+                                    min_value = valid_range.get('minInclusive')
+                                    if min_value is None:
+                                        min_value = valid_range.get('minExclusive')
+                                    if min_value is not None:
+                                        range_obj['min_value'] = min_value
+
+                                    max_value = valid_range.get('maxInclusive')
+                                    if max_value is None:
+                                        max_value = valid_range.get('maxExclusive')
+                                    if max_value is not None:
+                                        range_obj['max_value'] = max_value
+
+                                    if range_obj:
+                                        allowable_ranges.append(range_obj)
+
+                            if allowable_ranges:
+                                type_info['allowable_ranges'] = allowable_ranges
+
+                            # Description (shortDescription attribute preferred)
+                            arg_type_desc = _get_element_description(arg_type)
+                            if arg_type_desc:
+                                type_info['argument_description'] = arg_type_desc
+
+                            type_map[type_name] = type_info
+
+            arg_types_by_ss[ss_path] = type_map
+
             # Recurse into nested SpaceSystems
             for child in space_system:
                 if _strip_ns(child.tag) == 'SpaceSystem':
-                    collect_arg_types(child)
-        
-        collect_arg_types(root)
-        
-        # Collect all MetaCommands
-        meta_commands = {}
-        
-        def collect_meta_commands(space_system, prefix=''):
+                    subsys_name = child.get('name', '')
+                    child_ss_path = f"{ss_path}/{subsys_name}" if ss_path else subsys_name
+                    collect_arg_types(child, child_ss_path)
+
+        root_ss_name = root.get('name', '')
+        collect_arg_types(root, root_ss_name)
+
+        # Phase B: collect MetaCommands, keyed by owning SpaceSystem path + name
+        # meta_commands entries: (ss_path, ss_leaf_name, meta_cmd_element)
+        meta_commands: List[tuple] = []
+
+        def collect_meta_commands(space_system, ss_path, ss_leaf_name):
             for cmd_meta in space_system:
                 if _strip_ns(cmd_meta.tag) != 'CommandMetaData':
                     continue
-                    
+
                 for child in cmd_meta:
                     if _strip_ns(child.tag) == 'MetaCommandSet':
                         for meta_cmd in child:
                             if _strip_ns(meta_cmd.tag) == 'MetaCommand':
                                 cmd_name = meta_cmd.get('name')
                                 if cmd_name:
-                                    full_name = f"{prefix}/{cmd_name}" if prefix else cmd_name
-                                    meta_commands[full_name] = meta_cmd
-            
+                                    meta_commands.append((ss_path, ss_leaf_name, meta_cmd))
+
             # Recurse into nested SpaceSystems
             for child in space_system:
                 if _strip_ns(child.tag) == 'SpaceSystem':
                     subsys_name = child.get('name', '')
-                    new_prefix = f"{prefix}/{subsys_name}" if prefix else subsys_name
-                    collect_meta_commands(child, new_prefix)
-        
-        collect_meta_commands(root)
-        
+                    child_ss_path = f"{ss_path}/{subsys_name}" if ss_path else subsys_name
+                    collect_meta_commands(child, child_ss_path, subsys_name)
+
+        collect_meta_commands(root, root_ss_name, root_ss_name)
+
         # Parse MetaCommands
-        for cmd_name, meta_cmd in meta_commands.items():
+        seen_command_stems = set()
+        for ss_path, ss_leaf_name, meta_cmd in meta_commands:
             # Skip abstract commands
             if meta_cmd.get('abstract', 'false').lower() == 'true':
                 continue
-            
+
+            cmd_name = meta_cmd.get('name')
+            command_stem = f"{ss_leaf_name}__{cmd_name}"
+
+            if command_stem in seen_command_stems:
+                logger.warning(f"Duplicate command_stem generated: {command_stem} (SpaceSystem path: {ss_path})")
+            seen_command_stems.add(command_stem)
+
             command = {}
-            command['command_stem'] = cmd_name
-            
-            # Description
-            for child in meta_cmd:
-                local_tag = _strip_ns(child.tag)
-                if local_tag == 'LongDescription' and child.text:
-                    command['cmd_description'] = child.text.strip()
-                    break
-                elif local_tag == 'ShortDescription' and child.text:
-                    command['cmd_description'] = child.text.strip()
-            
+            command['command_stem'] = command_stem
+            command['operations_category'] = ss_leaf_name
+
+            # Description (shortDescription attribute preferred, falls back to child elements)
+            cmd_description = _get_element_description(meta_cmd)
+            if cmd_description:
+                command['cmd_description'] = cmd_description
+
             # Parse arguments from ArgumentList
+            arg_types = arg_types_by_ss.get(ss_path, {})
             arguments = []
             for child in meta_cmd:
                 if _strip_ns(child.tag) == 'ArgumentList':
@@ -755,93 +841,172 @@ def parse_xtce_command_dictionary(xml_file: str) -> List[Dict[str, Any]]:
                         if _strip_ns(arg_elem.tag) == 'Argument':
                             arg_name = arg_elem.get('name')
                             arg_type_ref = arg_elem.get('argumentTypeRef')
-                            
+
                             if arg_type_ref and arg_type_ref in arg_types:
                                 type_info = arg_types[arg_type_ref]
                                 argument = {
                                     'argument_type': type_info.get('argument_type', 'STRING'),
                                     'repeat_arg': 'No'
                                 }
-                                
+
                                 if 'argument_size' in type_info:
                                     argument['argument_size'] = type_info['argument_size']
-                                
+
                                 if 'enumerations' in type_info:
                                     argument['enumerations'] = type_info['enumerations']
-                                
-                                # Description from argument element
-                                for desc_child in arg_elem:
-                                    if _strip_ns(desc_child.tag) in ['LongDescription', 'ShortDescription']:
-                                        if desc_child.text:
-                                            argument['argument_description'] = desc_child.text.strip()
-                                            break
-                                
+
+                                if 'allowable_ranges' in type_info:
+                                    argument['allowable_ranges'] = type_info['allowable_ranges']
+
+                                # Description: f"{Argument name} - ({ArgumentType short description})",
+                                # falling back to just the Argument name if the ArgumentType has
+                                # no description.
+                                type_description = type_info.get('argument_description')
+                                if type_description:
+                                    argument['argument_description'] = f"{arg_name} - ({type_description})"
+                                else:
+                                    argument['argument_description'] = arg_name
+
                                 arguments.append(argument)
-            
+                            else:
+                                logger.warning(
+                                    f"Could not resolve argumentTypeRef '{arg_type_ref}' for argument "
+                                    f"'{arg_name}' in command '{command_stem}' (SpaceSystem path: {ss_path}); "
+                                    f"defaulting to STRING type"
+                                )
+                                arguments.append({
+                                    'argument_type': 'STRING',
+                                    'repeat_arg': 'No'
+                                })
+
             if arguments:
                 command['arguments'] = arguments
-            
+
             commands.append(command)
-            
+
     except ET.ParseError as e:
         logger.error(f"Failed to parse XTCE command dictionary {xml_file}: {e}")
     except Exception as e:
         logger.error(f"Error processing XTCE command dictionary {xml_file}: {e}")
         import traceback
         logger.error(traceback.format_exc())
-    
+
     return commands
+
+
+def _resolve_xtce_ref(ref: str, own_ss_path: str, all_ss_paths: List[str]) -> Optional[str]:
+    """
+    Resolve an XTCE NameReferenceType-style reference (e.g. parameterRef) to
+    the SpaceSystem path that owns the referenced element, following XTCE
+    path syntax:
+      - Absolute path ("/Root/Sub/Name"): resolved from the document root.
+      - Relative path with "../" segments: walked up from own_ss_path.
+      - Relative path with "Child/Name" segments: walked down from own_ss_path.
+      - Bare name (no "/"): resolved in own_ss_path first.
+
+    Args:
+        ref: The raw ref string (e.g. "PARAM", "../Sibling/PARAM", "/ROOT/PARAM")
+        own_ss_path: SpaceSystem path of the referencing element (e.g. "ROOT" or "ROOT/Sub")
+        all_ss_paths: All known SpaceSystem paths in the document (for validation/fallback)
+
+    Returns:
+        The resolved SpaceSystem path that should contain the bare name, or None if
+        the ref could not be resolved to a known SpaceSystem path.
+    """
+    if '/' not in ref:
+        # Bare name: same-scope lookup
+        return own_ss_path if own_ss_path in all_ss_paths else None
+
+    if ref.startswith('/'):
+        # Absolute path: strip leading slash, split off the bare name, rest is the SS path
+        parts = ref.lstrip('/').split('/')
+        ss_path = '/'.join(parts[:-1])
+        return ss_path if ss_path in all_ss_paths else None
+
+    # Relative path: may start with one or more "../" segments
+    own_parts = own_ss_path.split('/') if own_ss_path else []
+    ref_parts = ref.split('/')
+
+    while ref_parts and ref_parts[0] == '..':
+        if own_parts:
+            own_parts.pop()
+        ref_parts.pop(0)
+
+    # Remaining ref_parts[:-1] are child SpaceSystem names to descend into, last is the bare name
+    ss_parts = own_parts + ref_parts[:-1]
+    ss_path = '/'.join(ss_parts)
+    return ss_path if ss_path in all_ss_paths else None
 
 
 def parse_xtce_channel_dictionary(xml_file: str) -> List[Dict[str, Any]]:
     """
     Parse XTCE telemetry/channel dictionary and convert to OpenAPI format.
-    
+
+    Channel names are built from the SequenceContainer structure, as
+    f"{SpaceSystem_leaf_name}__{SequenceContainer_name}__{parameterRef}"
+    (e.g. "SPACESYSTEM__CONTAINER_NAME__PARAM_NAME"). Types/descriptions are resolved via
+    ParameterRefEntry -> Parameter -> parameterTypeRef -> ParameterType.
+    channel_id is set to the same value as channel_name. The
+    operations_category is set to the owning SpaceSystem's leaf name (the
+    SpaceSystem that owns the SequenceContainer). The description is built as
+    f"{SequenceContainer short description} - {ParameterType short description}",
+    falling back to whichever of the two is available if only one is present.
+
     Args:
         xml_file: Path to XTCE XML file
-        
+
     Returns:
         List of channel objects in OpenAPI format
     """
     channels = []
-    
+
     try:
         tree = ET.parse(xml_file)
         root = tree.getroot()
-        
+
         if _strip_ns(root.tag) != 'SpaceSystem':
             logger.error(f"Not an XTCE SpaceSystem: {xml_file}")
             return channels
-        
-        # Collect all parameter types from ParameterTypeSet
-        param_types = {}
-        
-        def collect_param_types(space_system):
+
+        # Phase A: collect per-SpaceSystem registries of parameter types and parameters,
+        # plus the SequenceContainers owned by each SpaceSystem.
+        param_types_by_ss: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        parameters_by_ss: Dict[str, Dict[str, str]] = {}
+        # containers_by_ss[ss_path] -> list of (leaf_ss_name, SequenceContainer element)
+        containers_by_ss: Dict[str, List[tuple]] = {}
+
+        def collect_registries(space_system, ss_path, ss_leaf_name):
+            param_types: Dict[str, Dict[str, Any]] = {}
+            parameters: Dict[str, str] = {}
+            containers: List[ET.Element] = []
+
             for tlm_meta in space_system:
                 if _strip_ns(tlm_meta.tag) != 'TelemetryMetaData':
                     continue
-                    
+
                 for child in tlm_meta:
-                    if _strip_ns(child.tag) == 'ParameterTypeSet':
+                    local_tag = _strip_ns(child.tag)
+
+                    if local_tag == 'ParameterTypeSet':
                         for param_type in child:
                             type_name = param_type.get('name')
                             if not type_name:
                                 continue
-                            
+
                             type_info = {'element': param_type}
-                            local_tag = _strip_ns(param_type.tag)
-                            
+                            type_local_tag = _strip_ns(param_type.tag)
+
                             # Map XTCE types to Ingenium types
-                            if local_tag == 'IntegerParameterType':
+                            if type_local_tag == 'IntegerParameterType':
                                 signed = param_type.get('signed', 'true').lower() == 'true'
                                 type_info['type'] = 'integer' if signed else 'unsigned'
-                            elif local_tag == 'FloatParameterType':
+                            elif type_local_tag == 'FloatParameterType':
                                 type_info['type'] = 'float'
-                            elif local_tag == 'StringParameterType':
+                            elif type_local_tag == 'StringParameterType':
                                 type_info['type'] = 'string'
-                            elif local_tag == 'BooleanParameterType':
+                            elif type_local_tag == 'BooleanParameterType':
                                 type_info['type'] = 'boolean'
-                            elif local_tag == 'EnumeratedParameterType':
+                            elif type_local_tag == 'EnumeratedParameterType':
                                 type_info['type'] = 'enum'
                                 # Extract enumerations
                                 enums = []
@@ -863,13 +1028,37 @@ def parse_xtce_channel_dictionary(xml_file: str) -> List[Dict[str, Any]]:
                                     type_info['enumerations'] = enums
                             else:
                                 type_info['type'] = 'string'
-                            
+
                             # Get size in bits and check for EU
                             eu_present = False
                             for encoding in param_type:
                                 encoding_tag = _strip_ns(encoding.tag)
                                 if 'Encoding' in encoding_tag:
                                     size_in_bits = encoding.get('sizeInBits')
+                                    if not size_in_bits:
+                                        for encoding_child in encoding:
+                                            if _strip_ns(encoding_child.tag) == 'SizeInBits':
+                                                # SizeInBits may be a plain text value, contain a
+                                                # FixedValue child directly (integerValue attr or
+                                                # text), or nest it under a Fixed element (as used
+                                                # by StringDataEncoding: SizeInBits -> Fixed ->
+                                                # FixedValue).
+                                                if encoding_child.text and encoding_child.text.strip():
+                                                    size_in_bits = encoding_child.text.strip()
+                                                else:
+                                                    for size_child in encoding_child:
+                                                        size_child_tag = _strip_ns(size_child.tag)
+                                                        if size_child_tag == 'FixedValue':
+                                                            size_in_bits = size_child.get('integerValue') or size_child.text
+                                                        elif size_child_tag == 'Fixed':
+                                                            for fixed_child in size_child:
+                                                                if _strip_ns(fixed_child.tag) == 'FixedValue':
+                                                                    size_in_bits = fixed_child.get('integerValue') or fixed_child.text
+                                                                    break
+                                                        if size_in_bits:
+                                                            size_in_bits = size_in_bits.strip()
+                                                            break
+                                                break
                                     if size_in_bits:
                                         try:
                                             type_info['bit_size'] = int(size_in_bits)
@@ -877,86 +1066,159 @@ def parse_xtce_channel_dictionary(xml_file: str) -> List[Dict[str, Any]]:
                                             pass
                                 elif encoding_tag in ['DefaultCalibrator', 'ContextCalibrationList']:
                                     eu_present = True
-                            
+
                             type_info['eu_present'] = 'Yes' if eu_present else 'No'
+
+                            # Description (shortDescription attribute preferred)
+                            type_desc = _get_element_description(param_type)
+                            if type_desc:
+                                type_info['description'] = type_desc
+
                             param_types[type_name] = type_info
-            
-            # Recurse into nested SpaceSystems
-            for child in space_system:
-                if _strip_ns(child.tag) == 'SpaceSystem':
-                    collect_param_types(child)
-        
-        collect_param_types(root)
-        
-        # Collect all Parameters
-        def collect_parameters(space_system, prefix=''):
-            for tlm_meta in space_system:
-                if _strip_ns(tlm_meta.tag) != 'TelemetryMetaData':
-                    continue
-                    
-                for child in tlm_meta:
-                    if _strip_ns(child.tag) == 'ParameterSet':
+
+                    elif local_tag == 'ParameterSet':
                         for param in child:
                             if _strip_ns(param.tag) == 'Parameter':
                                 param_name = param.get('name')
                                 if not param_name:
                                     continue
-                                
-                                full_name = f"{prefix}/{param_name}" if prefix else param_name
                                 param_type_ref = param.get('parameterTypeRef')
-                                
-                                channel = {
-                                    'channel_name': full_name,
-                                    'derived': 'No'
-                                }
-                                
-                                # Get type info
-                                if param_type_ref and param_type_ref in param_types:
-                                    type_info = param_types[param_type_ref]
-                                    channel['type'] = type_info.get('type', 'string')
-                                    
-                                    if 'bit_size' in type_info:
-                                        channel['bit_size'] = type_info['bit_size']
-                                    
-                                    if 'enumerations' in type_info:
-                                        channel['enumerations'] = type_info['enumerations']
-                                    
-                                    channel['eu_present'] = type_info.get('eu_present', 'No')
-                                else:
-                                    channel['type'] = 'string'
-                                    channel['eu_present'] = 'No'
-                                
-                                # Description
-                                for desc_child in param:
-                                    desc_tag = _strip_ns(desc_child.tag)
-                                    if desc_tag == 'LongDescription' and desc_child.text:
-                                        channel['description'] = desc_child.text.strip()
-                                        break
-                                    elif desc_tag == 'ShortDescription' and desc_child.text:
-                                        channel['description'] = desc_child.text.strip()
-                                
-                                # Use parameter name as channel_id if not set
-                                if 'channel_id' not in channel:
-                                    channel['channel_id'] = param_name
-                                
-                                channels.append(channel)
-            
+                                parameters[param_name] = param_type_ref
+
+                    elif local_tag == 'ContainerSet':
+                        for container in child:
+                            if _strip_ns(container.tag) == 'SequenceContainer':
+                                containers.append(container)
+
+            param_types_by_ss[ss_path] = param_types
+            parameters_by_ss[ss_path] = parameters
+            if containers:
+                containers_by_ss[ss_path] = [(ss_leaf_name, c) for c in containers]
+
             # Recurse into nested SpaceSystems
             for child in space_system:
                 if _strip_ns(child.tag) == 'SpaceSystem':
                     subsys_name = child.get('name', '')
-                    new_prefix = f"{prefix}/{subsys_name}" if prefix else subsys_name
-                    collect_parameters(child, new_prefix)
-        
-        collect_parameters(root)
-            
+                    child_ss_path = f"{ss_path}/{subsys_name}" if ss_path else subsys_name
+                    collect_registries(child, child_ss_path, subsys_name)
+
+        root_ss_name = root.get('name', '')
+        collect_registries(root, root_ss_name, root_ss_name)
+
+        all_ss_paths = list(param_types_by_ss.keys())
+
+        # Phase B: walk SequenceContainers per SpaceSystem, resolving each
+        # ParameterRefEntry to its owning SpaceSystem/Parameter/ParameterType.
+        seen_channel_names = set()
+
+        for ss_path, container_entries in containers_by_ss.items():
+            for ss_leaf_name, container in container_entries:
+                container_name = container.get('name')
+                if not container_name:
+                    continue
+
+                container_description = _get_element_description(container)
+
+                entry_list = None
+                for child in container:
+                    if _strip_ns(child.tag) == 'EntryList':
+                        entry_list = child
+                        break
+
+                if entry_list is None:
+                    continue
+
+                for entry in entry_list:
+                    entry_tag = _strip_ns(entry.tag)
+                    if entry_tag != 'ParameterRefEntry':
+                        # Other entry kinds (ContainerRefEntry, ArrayParameterRefEntry,
+                        # ParameterSegmentRefEntry, IndirectParameterRefEntry,
+                        # StreamSegmentEntry) are not channels; skip with a debug log.
+                        logger.debug(
+                            f"Skipping unsupported EntryList entry kind '{entry_tag}' in "
+                            f"container '{container_name}' (SpaceSystem: {ss_leaf_name})"
+                        )
+                        continue
+
+                    parameter_ref = entry.get('parameterRef')
+                    if not parameter_ref:
+                        continue
+
+                    owning_ss_path = _resolve_xtce_ref(parameter_ref, ss_path, all_ss_paths)
+                    bare_param_name = parameter_ref.rstrip('/').split('/')[-1]
+
+                    if owning_ss_path is None:
+                        logger.warning(
+                            f"Could not resolve owning SpaceSystem for parameterRef "
+                            f"'{parameter_ref}' in container '{container_name}' "
+                            f"(SpaceSystem: {ss_leaf_name}); skipping"
+                        )
+                        continue
+
+                    parameters = parameters_by_ss.get(owning_ss_path, {})
+                    param_type_ref = parameters.get(bare_param_name)
+
+                    if param_type_ref is None:
+                        logger.warning(
+                            f"parameterRef '{parameter_ref}' not found in ParameterSet "
+                            f"(resolved SpaceSystem scope: '{owning_ss_path}'); skipping "
+                            f"entry in container '{container_name}' (SpaceSystem: {ss_leaf_name})"
+                        )
+                        continue
+
+                    param_types = param_types_by_ss.get(owning_ss_path, {})
+                    type_info = param_types.get(param_type_ref)
+
+                    channel_name = f"{ss_leaf_name}__{container_name}__{bare_param_name}"
+                    if channel_name in seen_channel_names:
+                        logger.warning(f"Duplicate channel_name generated: {channel_name}")
+                    seen_channel_names.add(channel_name)
+
+                    channel = {
+                        'channel_name': channel_name,
+                        'channel_id': channel_name,
+                        'derived': 'No',
+                        'operations_category': ss_leaf_name
+                    }
+
+                    if type_info:
+                        channel['type'] = type_info.get('type', 'string')
+
+                        if 'bit_size' in type_info:
+                            channel['bit_size'] = type_info['bit_size']
+
+                        if 'enumerations' in type_info:
+                            channel['enumerations'] = type_info['enumerations']
+
+                        channel['eu_present'] = type_info.get('eu_present', 'No')
+
+                        type_description = type_info.get('description')
+                        if container_description and type_description:
+                            channel['description'] = f"{container_description} - {type_description}"
+                        elif container_description:
+                            channel['description'] = container_description
+                        elif type_description:
+                            channel['description'] = type_description
+                    else:
+                        logger.warning(
+                            f"parameterTypeRef '{param_type_ref}' not found for parameter "
+                            f"'{bare_param_name}' (SpaceSystem scope: '{owning_ss_path}'); "
+                            f"defaulting to string type"
+                        )
+                        channel['type'] = 'string'
+                        channel['eu_present'] = 'No'
+                        if container_description:
+                            channel['description'] = container_description
+
+                    channels.append(channel)
+
     except ET.ParseError as e:
         logger.error(f"Failed to parse XTCE channel dictionary {xml_file}: {e}")
     except Exception as e:
         logger.error(f"Error processing XTCE channel dictionary {xml_file}: {e}")
         import traceback
         logger.error(traceback.format_exc())
-    
+
     return channels
 
 

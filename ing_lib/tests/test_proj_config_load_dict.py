@@ -514,4 +514,423 @@ class TestProjConfigLoadDict:
             commands = parse_command_dictionary(temp_file)
             assert len(commands) == 0  # Should return empty list on parse error
         finally:
-            os.remove(temp_file) 
+            os.remove(temp_file)
+
+    def test_parse_xtce_channel_dictionary_container_naming(self):
+        """Test that XTCE channel names are built as SpaceSystem__Container__Param
+        and that the same parameter referenced by two containers yields two
+        distinct channel entries."""
+        xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+<xtce:SpaceSystem xmlns:xtce="http://www.omg.org/spec/XTCE/20180204" name="TESTSYS">
+  <xtce:TelemetryMetaData>
+    <xtce:ParameterTypeSet>
+      <xtce:IntegerParameterType name="ID_Type" shortDescription="Test ID param" signed="false">
+        <xtce:IntegerDataEncoding sizeInBits="16" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="GAIN_Type" shortDescription="Gain dB" signed="true">
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="twosComplement"/>
+      </xtce:IntegerParameterType>
+    </xtce:ParameterTypeSet>
+    <xtce:ParameterSet>
+      <xtce:Parameter name="ID" parameterTypeRef="ID_Type"/>
+      <xtce:Parameter name="GAIN" parameterTypeRef="GAIN_Type"/>
+    </xtce:ParameterSet>
+    <xtce:ContainerSet>
+      <xtce:SequenceContainer name="RX_STATUS">
+        <xtce:EntryList>
+          <xtce:ParameterRefEntry parameterRef="ID"/>
+          <xtce:ParameterRefEntry parameterRef="GAIN"/>
+        </xtce:EntryList>
+      </xtce:SequenceContainer>
+      <xtce:SequenceContainer name="SOH1">
+        <xtce:EntryList>
+          <xtce:ParameterRefEntry parameterRef="ID"/>
+        </xtce:EntryList>
+      </xtce:SequenceContainer>
+    </xtce:ContainerSet>
+  </xtce:TelemetryMetaData>
+</xtce:SpaceSystem>
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.xtce', delete=False) as f:
+            f.write(xml_content)
+            temp_file = f.name
+
+        try:
+            channels = parse_xtce_channel_dictionary(temp_file)
+            names = {c['channel_name'] for c in channels}
+
+            # ID appears in both containers -> two distinct channel entries
+            assert 'TESTSYS__RX_STATUS__ID' in names
+            assert 'TESTSYS__SOH1__ID' in names
+            assert 'TESTSYS__RX_STATUS__GAIN' in names
+            assert len(channels) == 3
+
+            gain_channel = next(c for c in channels if c['channel_name'] == 'TESTSYS__RX_STATUS__GAIN')
+            assert gain_channel['type'] == 'integer'
+            assert gain_channel['bit_size'] == 32
+            assert gain_channel['description'] == 'Gain dB'
+            assert gain_channel['channel_id'] == 'TESTSYS__RX_STATUS__GAIN'
+        finally:
+            os.remove(temp_file)
+
+    def test_parse_xtce_channel_dictionary_size_in_bits_element(self):
+        """Test that bit_size is captured from a SizeInBits child element,
+        both as plain text and via a nested FixedValue element, in addition
+        to the sizeInBits attribute form."""
+        xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+<xtce:SpaceSystem xmlns:xtce="http://www.omg.org/spec/XTCE/20180204" name="TESTSYS">
+  <xtce:TelemetryMetaData>
+    <xtce:ParameterTypeSet>
+      <xtce:IntegerParameterType name="ATTR_Type" shortDescription="attr sizeInBits" signed="false">
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="TEXT_Type" shortDescription="text SizeInBits" signed="false">
+        <xtce:IntegerDataEncoding encoding="unsigned">
+          <xtce:SizeInBits>24</xtce:SizeInBits>
+        </xtce:IntegerDataEncoding>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="FIXED_Type" shortDescription="FixedValue SizeInBits" signed="false">
+        <xtce:IntegerDataEncoding encoding="unsigned">
+          <xtce:SizeInBits>
+            <xtce:FixedValue>12</xtce:FixedValue>
+          </xtce:SizeInBits>
+        </xtce:IntegerDataEncoding>
+      </xtce:IntegerParameterType>
+    </xtce:ParameterTypeSet>
+    <xtce:ParameterSet>
+      <xtce:Parameter name="ATTR" parameterTypeRef="ATTR_Type"/>
+      <xtce:Parameter name="TEXT" parameterTypeRef="TEXT_Type"/>
+      <xtce:Parameter name="FIXED" parameterTypeRef="FIXED_Type"/>
+    </xtce:ParameterSet>
+    <xtce:ContainerSet>
+      <xtce:SequenceContainer name="SOH1">
+        <xtce:EntryList>
+          <xtce:ParameterRefEntry parameterRef="ATTR"/>
+          <xtce:ParameterRefEntry parameterRef="TEXT"/>
+          <xtce:ParameterRefEntry parameterRef="FIXED"/>
+        </xtce:EntryList>
+      </xtce:SequenceContainer>
+    </xtce:ContainerSet>
+  </xtce:TelemetryMetaData>
+</xtce:SpaceSystem>
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.xtce', delete=False) as f:
+            f.write(xml_content)
+            temp_file = f.name
+
+        try:
+            channels = parse_xtce_channel_dictionary(temp_file)
+            by_name = {c['channel_name']: c for c in channels}
+
+            assert by_name['TESTSYS__SOH1__ATTR']['bit_size'] == 32
+            assert by_name['TESTSYS__SOH1__TEXT']['bit_size'] == 24
+            assert by_name['TESTSYS__SOH1__FIXED']['bit_size'] == 12
+        finally:
+            os.remove(temp_file)
+
+    def test_parse_xtce_channel_dictionary_string_size_in_bits_fixed_element(self):
+        """Test that bit_size is captured from a StringDataEncoding's nested
+        SizeInBits -> Fixed -> FixedValue structure."""
+        xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+<xtce:SpaceSystem xmlns:xtce="http://www.omg.org/spec/XTCE/20180204" name="TESTSYS">
+  <xtce:TelemetryMetaData>
+    <xtce:ParameterTypeSet>
+      <xtce:StringParameterType name="STR_Type" shortDescription="fixed string param">
+        <xtce:StringDataEncoding encoding="UTF-8">
+          <xtce:SizeInBits>
+            <xtce:Fixed>
+              <xtce:FixedValue>128</xtce:FixedValue>
+            </xtce:Fixed>
+            <xtce:TerminationChar>00</xtce:TerminationChar>
+          </xtce:SizeInBits>
+        </xtce:StringDataEncoding>
+      </xtce:StringParameterType>
+    </xtce:ParameterTypeSet>
+    <xtce:ParameterSet>
+      <xtce:Parameter name="STR" parameterTypeRef="STR_Type"/>
+    </xtce:ParameterSet>
+    <xtce:ContainerSet>
+      <xtce:SequenceContainer name="SOH1">
+        <xtce:EntryList>
+          <xtce:ParameterRefEntry parameterRef="STR"/>
+        </xtce:EntryList>
+      </xtce:SequenceContainer>
+    </xtce:ContainerSet>
+  </xtce:TelemetryMetaData>
+</xtce:SpaceSystem>
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.xtce', delete=False) as f:
+            f.write(xml_content)
+            temp_file = f.name
+
+        try:
+            channels = parse_xtce_channel_dictionary(temp_file)
+            by_name = {c['channel_name']: c for c in channels}
+
+            assert by_name['TESTSYS__SOH1__STR']['bit_size'] == 128
+            assert by_name['TESTSYS__SOH1__STR']['type'] == 'string'
+        finally:
+            os.remove(temp_file)
+
+    def test_parse_xtce_channel_dictionary_description_combines_container_and_type(self):
+        """Test that channel description is built as
+        f"{SequenceContainer short description} - {ParameterType short description}",
+        falling back to whichever piece is available when only one exists."""
+        xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+<xtce:SpaceSystem xmlns:xtce="http://www.omg.org/spec/XTCE/20180204" name="TESTSYS">
+  <xtce:TelemetryMetaData>
+    <xtce:ParameterTypeSet>
+      <xtce:IntegerParameterType name="BOTH_Type" shortDescription="Gain dB" signed="false">
+        <xtce:IntegerDataEncoding sizeInBits="16" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="NODESC_Type" signed="false">
+        <xtce:IntegerDataEncoding sizeInBits="8" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+    </xtce:ParameterTypeSet>
+    <xtce:ParameterSet>
+      <xtce:Parameter name="BOTH" parameterTypeRef="BOTH_Type"/>
+      <xtce:Parameter name="NODESC" parameterTypeRef="NODESC_Type"/>
+    </xtce:ParameterSet>
+    <xtce:ContainerSet>
+      <xtce:SequenceContainer name="RX_STATUS" shortDescription="RX Status Container">
+        <xtce:EntryList>
+          <xtce:ParameterRefEntry parameterRef="BOTH"/>
+          <xtce:ParameterRefEntry parameterRef="NODESC"/>
+        </xtce:EntryList>
+      </xtce:SequenceContainer>
+      <xtce:SequenceContainer name="NOCONTAINERDESC">
+        <xtce:EntryList>
+          <xtce:ParameterRefEntry parameterRef="BOTH"/>
+        </xtce:EntryList>
+      </xtce:SequenceContainer>
+    </xtce:ContainerSet>
+  </xtce:TelemetryMetaData>
+</xtce:SpaceSystem>
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.xtce', delete=False) as f:
+            f.write(xml_content)
+            temp_file = f.name
+
+        try:
+            channels = parse_xtce_channel_dictionary(temp_file)
+            by_name = {c['channel_name']: c for c in channels}
+
+            # Both container and type descriptions present -> combined
+            assert by_name['TESTSYS__RX_STATUS__BOTH']['description'] == 'RX Status Container - Gain dB'
+            # Only container description present -> fall back to container description
+            assert by_name['TESTSYS__RX_STATUS__NODESC']['description'] == 'RX Status Container'
+            # Only type description present -> fall back to type description
+            assert by_name['TESTSYS__NOCONTAINERDESC__BOTH']['description'] == 'Gain dB'
+        finally:
+            os.remove(temp_file)
+
+    def test_parse_xtce_channel_dictionary_multi_spacesystem(self):
+        """Test channel naming across multiple (nested) SpaceSystems, including
+        cross-SpaceSystem parameterRef resolution via relative paths."""
+        xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+<xtce:SpaceSystem xmlns:xtce="http://www.omg.org/spec/XTCE/20180204" name="ROOT">
+  <xtce:TelemetryMetaData>
+    <xtce:ParameterTypeSet>
+      <xtce:IntegerParameterType name="SHARED_Type" shortDescription="shared param" signed="false">
+        <xtce:IntegerDataEncoding sizeInBits="8" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+    </xtce:ParameterTypeSet>
+    <xtce:ParameterSet>
+      <xtce:Parameter name="SHARED" parameterTypeRef="SHARED_Type"/>
+    </xtce:ParameterSet>
+  </xtce:TelemetryMetaData>
+  <xtce:SpaceSystem name="CHILD">
+    <xtce:TelemetryMetaData>
+      <xtce:ParameterTypeSet>
+        <xtce:IntegerParameterType name="LOCAL_Type" shortDescription="local param" signed="true">
+          <xtce:IntegerDataEncoding sizeInBits="16" encoding="twosComplement"/>
+        </xtce:IntegerParameterType>
+      </xtce:ParameterTypeSet>
+      <xtce:ParameterSet>
+        <xtce:Parameter name="LOCAL" parameterTypeRef="LOCAL_Type"/>
+      </xtce:ParameterSet>
+      <xtce:ContainerSet>
+        <xtce:SequenceContainer name="CHILD_CONTAINER">
+          <xtce:EntryList>
+            <xtce:ParameterRefEntry parameterRef="LOCAL"/>
+            <xtce:ParameterRefEntry parameterRef="../SHARED"/>
+          </xtce:EntryList>
+        </xtce:SequenceContainer>
+      </xtce:ContainerSet>
+    </xtce:TelemetryMetaData>
+  </xtce:SpaceSystem>
+</xtce:SpaceSystem>
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.xtce', delete=False) as f:
+            f.write(xml_content)
+            temp_file = f.name
+
+        try:
+            channels = parse_xtce_channel_dictionary(temp_file)
+            names = {c['channel_name']: c for c in channels}
+
+            assert 'CHILD__CHILD_CONTAINER__LOCAL' in names
+            assert names['CHILD__CHILD_CONTAINER__LOCAL']['type'] == 'integer'
+            assert names['CHILD__CHILD_CONTAINER__LOCAL']['bit_size'] == 16
+
+            # Cross-SpaceSystem parameterRef ("../SHARED") resolved from the ROOT SpaceSystem
+            assert 'CHILD__CHILD_CONTAINER__SHARED' in names
+            assert names['CHILD__CHILD_CONTAINER__SHARED']['type'] == 'unsigned'
+            assert names['CHILD__CHILD_CONTAINER__SHARED']['bit_size'] == 8
+        finally:
+            os.remove(temp_file)
+
+    def test_parse_xtce_command_dictionary_naming_and_arguments(self):
+        """Test that XTCE command_stem is SpaceSystem__MetaCommand and that
+        argument type/size/description are resolved via argumentTypeRef's
+        shortDescription attribute."""
+        xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+<xtce:SpaceSystem xmlns:xtce="http://www.omg.org/spec/XTCE/20180204" name="TESTSYS">
+  <xtce:CommandMetaData>
+    <xtce:ArgumentTypeSet>
+      <xtce:IntegerArgumentType name="DO_THING_VERSION_Type" shortDescription="Test version arg" signed="false">
+        <xtce:IntegerDataEncoding sizeInBits="8" encoding="unsigned"/>
+      </xtce:IntegerArgumentType>
+    </xtce:ArgumentTypeSet>
+    <xtce:MetaCommandSet>
+      <xtce:MetaCommand name="DO_THING" shortDescription="Test command description">
+        <xtce:ArgumentList>
+          <xtce:Argument name="VERSION" argumentTypeRef="DO_THING_VERSION_Type" initialValue="0"/>
+        </xtce:ArgumentList>
+      </xtce:MetaCommand>
+    </xtce:MetaCommandSet>
+  </xtce:CommandMetaData>
+</xtce:SpaceSystem>
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.xtce', delete=False) as f:
+            f.write(xml_content)
+            temp_file = f.name
+
+        try:
+            commands = parse_xtce_command_dictionary(temp_file)
+            assert len(commands) == 1
+
+            command = commands[0]
+            assert command['command_stem'] == 'TESTSYS__DO_THING'
+            assert command['cmd_description'] == 'Test command description'
+            assert len(command['arguments']) == 1
+
+            argument = command['arguments'][0]
+            assert argument['argument_type'] == 'UINT'
+            assert argument['argument_size'] == 1
+            assert argument['argument_description'] == 'VERSION - (Test version arg)'
+        finally:
+            os.remove(temp_file)
+
+    def test_parse_xtce_command_dictionary_valid_range_set(self):
+        """Test that ArgumentType ValidRangeSet/ValidRange elements are
+        extracted into each argument's allowable_ranges as a list of
+        {'min_value', 'max_value'} dicts, covering both inclusive and
+        exclusive bound attributes and multiple ValidRange entries."""
+        xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+<xtce:SpaceSystem xmlns:xtce="http://www.omg.org/spec/XTCE/20180204" name="TESTSYS">
+  <xtce:CommandMetaData>
+    <xtce:ArgumentTypeSet>
+      <xtce:IntegerArgumentType name="RANGED_Type" signed="true">
+        <xtce:IntegerDataEncoding sizeInBits="16" encoding="twosComplement"/>
+        <xtce:ValidRangeSet>
+          <xtce:ValidRange minInclusive="0" maxInclusive="100"/>
+          <xtce:ValidRange minExclusive="200" maxExclusive="300"/>
+        </xtce:ValidRangeSet>
+      </xtce:IntegerArgumentType>
+      <xtce:IntegerArgumentType name="NORANGE_Type" signed="true">
+        <xtce:IntegerDataEncoding sizeInBits="16" encoding="twosComplement"/>
+      </xtce:IntegerArgumentType>
+    </xtce:ArgumentTypeSet>
+    <xtce:MetaCommandSet>
+      <xtce:MetaCommand name="DO_THING">
+        <xtce:ArgumentList>
+          <xtce:Argument name="RANGED_ARG" argumentTypeRef="RANGED_Type"/>
+          <xtce:Argument name="PLAIN_ARG" argumentTypeRef="NORANGE_Type"/>
+        </xtce:ArgumentList>
+      </xtce:MetaCommand>
+    </xtce:MetaCommandSet>
+  </xtce:CommandMetaData>
+</xtce:SpaceSystem>
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.xtce', delete=False) as f:
+            f.write(xml_content)
+            temp_file = f.name
+
+        try:
+            commands = parse_xtce_command_dictionary(temp_file)
+            assert len(commands) == 1
+
+            arguments_by_index = commands[0]['arguments']
+
+            ranged_arg = arguments_by_index[0]
+            assert ranged_arg['allowable_ranges'] == [
+                {'min_value': '0', 'max_value': '100'},
+                {'min_value': '200', 'max_value': '300'},
+            ]
+
+            plain_arg = arguments_by_index[1]
+            assert 'allowable_ranges' not in plain_arg
+        finally:
+            os.remove(temp_file)
+
+    def test_parse_xtce_command_dictionary_multi_spacesystem(self):
+        """Test that two SpaceSystems with same-named MetaCommands produce
+        distinct command_stems and do not cross-resolve argumentTypeRefs."""
+        xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+<xtce:SpaceSystem xmlns:xtce="http://www.omg.org/spec/XTCE/20180204" name="ROOT">
+  <xtce:SpaceSystem name="SSA">
+    <xtce:CommandMetaData>
+      <xtce:ArgumentTypeSet>
+        <xtce:IntegerArgumentType name="ARG_Type" shortDescription="SSA arg" signed="false">
+          <xtce:IntegerDataEncoding sizeInBits="8" encoding="unsigned"/>
+        </xtce:IntegerArgumentType>
+      </xtce:ArgumentTypeSet>
+      <xtce:MetaCommandSet>
+        <xtce:MetaCommand name="DO_THING" shortDescription="SSA do thing">
+          <xtce:ArgumentList>
+            <xtce:Argument name="ARG" argumentTypeRef="ARG_Type"/>
+          </xtce:ArgumentList>
+        </xtce:MetaCommand>
+      </xtce:MetaCommandSet>
+    </xtce:CommandMetaData>
+  </xtce:SpaceSystem>
+  <xtce:SpaceSystem name="SSB">
+    <xtce:CommandMetaData>
+      <xtce:ArgumentTypeSet>
+        <xtce:FloatArgumentType name="ARG_Type" shortDescription="SSB arg">
+          <xtce:FloatDataEncoding sizeInBits="32" encoding="IEEE754_1985"/>
+        </xtce:FloatArgumentType>
+      </xtce:ArgumentTypeSet>
+      <xtce:MetaCommandSet>
+        <xtce:MetaCommand name="DO_THING" shortDescription="SSB do thing">
+          <xtce:ArgumentList>
+            <xtce:Argument name="ARG" argumentTypeRef="ARG_Type"/>
+          </xtce:ArgumentList>
+        </xtce:MetaCommand>
+      </xtce:MetaCommandSet>
+    </xtce:CommandMetaData>
+  </xtce:SpaceSystem>
+</xtce:SpaceSystem>
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.xtce', delete=False) as f:
+            f.write(xml_content)
+            temp_file = f.name
+
+        try:
+            commands = parse_xtce_command_dictionary(temp_file)
+            by_stem = {c['command_stem']: c for c in commands}
+
+            assert 'SSA__DO_THING' in by_stem
+            assert 'SSB__DO_THING' in by_stem
+
+            ssa_arg = by_stem['SSA__DO_THING']['arguments'][0]
+            ssb_arg = by_stem['SSB__DO_THING']['arguments'][0]
+
+            # Each ARG_Type resolved within its own SpaceSystem's ArgumentTypeSet
+            assert ssa_arg['argument_type'] == 'UINT'
+            assert ssa_arg['argument_description'] == 'ARG - (SSA arg)'
+            assert ssb_arg['argument_type'] == 'FLOAT'
+            assert ssb_arg['argument_description'] == 'ARG - (SSB arg)'
+        finally:
+            os.remove(temp_file)
