@@ -192,7 +192,7 @@ def check_telemetry_query(query: list) -> None:
                     logger.error(msg)
                     raise InputError(msg)
 
-        if predict.get('bit_mask') and predict.get('bit_op') is None:
+        if predict.get('bit_mask') is not None and not predict.get('bit_op'):
             msg = f'A bit mask f{predict.get("bit_mask")} without a bit operation is invalid.'
             logger.error(msg)
             raise InputError(msg)
@@ -282,8 +282,13 @@ def verify_wait_telemetry(query: list, telemetry_query_func: callable, start_tim
     check_telemetry_query(query)
 
     results = {'query_matches_predict': True,
-               'predict_results': [],
+               'predict_results': [None] * len(query),
                'telemetry': {}}
+
+    if not query:
+        return results
+
+    predict_complete = [False] * len(query)
 
     # Set the boundaries of the query
     if start_time is None:
@@ -298,7 +303,7 @@ def verify_wait_telemetry(query: list, telemetry_query_func: callable, start_tim
         # Add the channel to a list
         if predicts.get('telem_uuid') not in channels_to_query:
             channels_to_query.append(predicts.get('telem_uuid'))
-            results['telemetry'][predicts.get('telem_uuid')] = {}
+            results['telemetry'][predicts.get('telem_uuid')] = []
 
     # Query until the channel query is complete
     query_complete = False
@@ -308,51 +313,50 @@ def verify_wait_telemetry(query: list, telemetry_query_func: callable, start_tim
 
     while not query_timeout and not query_complete:
 
-        # If the timeout is in the past - set query_timeout to True
-        # This feeds into the evaluation of WAIT and NOT_PRESENT conditions
-        # It will also abort the loop in cases of timeouts
-        if datetime.now(timezone.utc) > time_out_time:
-            query_timeout = True
-
         # Query all the channels returning on collection of any data
         telem_results = telemetry_query_func(channels_to_query, timeout, lookback, start_time, ReturnOn.ANY)
 
-        results['predict_results'] = []
+        # If the timeout is in the past - set query_timeout to True
+        # This feeds into the evaluation of WAIT and NOT_PRESENT conditions
+        # It will also abort the loop in cases of timeouts
+        query_timeout = datetime.now(timezone.utc) >= time_out_time
 
         # Evaluate the results
-        for predict in query:
-            # Evaluate each channel per the predicts
-            evaluated_telem = evaluate_verify_condition(telem_results['telemetry'].get(predict.get('telem_uuid')), predict,
-                                                          query_timeout)
-            # Add the evaluted results 
-            results['predict_results'].append(evaluated_telem)
-
+        for index, predict in enumerate(query):
             # Include the full query history within the time frame
-            results['telemetry'][predict.get('telem_uuid')] = telem_results.get(predict.get('telem_uuid'))
-            
+            telemetry = telem_results.get(predict.get('telem_uuid'), [])
+            results['telemetry'][predict.get('telem_uuid')] = telemetry
+
+            if predict_complete[index]:
+                continue
+
+            # Evaluate each channel per the predicts
+            evaluated_telem = evaluate_verify_condition(telemetry, predict, query_timeout)
+            # Add the evaluted results 
+            results['predict_results'][index] = evaluated_telem
 
         # As we only want to exit when all channel queries / predicts have been satisfied set query_complete to True
         query_complete = True
         results['query_matches_predict'] = True
 
         # Check if the query has completed
-        for predict_result in results['predict_results']:
+        for index, predict_result in enumerate(results['predict_results']):
+            status = predict_result['verification_status']
             # If the verification_condition = NOT_PRESENT only exit on FAIL
             # Note that this also means that query_timeout = True
             if predict_result['predict']['verification_condition'] in ['NOT_PRESENT']:
-                if predict_result['predict']['verification_status'] not in ['PASS', 'ERROR']:
-                    query_complete = False
-                    results['query_matches_predict'] = False
-                    break
+                predict_complete[index] = status in ['PASS', 'FAIL', 'ERROR']
             else:
                 # If Waiting - mark the query complete if the status equals PASS or ERROR
                 if predict_result['predict']['verify_wait'] == 'WAIT':
-                    if predict_result['predict']['verification_status'] in ['FAIL']:
-                        query_complete = False
-                        results['query_matches_predict'] = False
+                    predict_complete[index] = status in ['PASS', 'ERROR'] or (query_timeout and status == 'FAIL')
                 elif predict_result['predict']['verify_wait'] == 'VERIFY':
-                    if predict_result['predict']['verification_status'] in ['FAIL', 'ERROR']:
-                        results['query_matches_predict'] = False
+                    predict_complete[index] = status in ['PASS', 'FAIL', 'ERROR']
+
+            if not predict_complete[index]:
+                query_complete = False
+            if status != 'PASS':
+                results['query_matches_predict'] = False
 
     return results
 
@@ -410,7 +414,7 @@ def evaluate_verify_condition(telemetry, predict, query_timeout):
             return result
 
     # If we get here, telemetry was found
-    telem = telemetry[0]
+    telem = telemetry[-1]
     result['telem_details'] = telem
     result['data_present'] = True
 
@@ -434,19 +438,19 @@ def evaluate_verify_condition(telemetry, predict, query_timeout):
         return result
 
     # If there is a bit mask present apply it
-    if predict.get('bit_mask') and predict.get('bit_op'):
+    if predict.get('bit_mask') is not None and predict.get('bit_op'):
         msg = f'Applying bit_mask: {predict.get("bit_mask")} bit_op: {predict.get("bit_op")} to channel_id: {telem_uuid} (DN: {telem.get("raw_value")})'
         logger.debug(msg)
 
-    # Try applying the bit mask
-    try:
-        masked_value = apply_bit_mask(telem.get('raw_value'), predict['bit_mask'], predict['bit_op'])
-    except BitMaskError:
-        msg = f'Error applying specified bit-mask: {predict.get("bit_mask")}, bit-op: {predict.get("bit_op")}, to channel: {telem_uuid}, value: {telem.get("eng_value")}'
-        logger.error(msg)
-        raise InputError(msg)
+        # Try applying the bit mask
+        try:
+            masked_value = apply_bit_mask(telem.get('raw_value'), predict['bit_mask'], predict['bit_op'])
+        except BitMaskError:
+            msg = f'Error applying specified bit-mask: {predict.get("bit_mask")}, bit-op: {predict.get("bit_op")}, to channel: {telem_uuid}, value: {telem.get("eng_value")}'
+            logger.error(msg)
+            raise InputError(msg)
 
-    result['actual_value'] = masked_value
+        result['actual_value'] = masked_value
 
     # Check if a prior value was provided
     # If so compute revised actual_value based on actual_value - prior_value
@@ -456,9 +460,12 @@ def evaluate_verify_condition(telemetry, predict, query_timeout):
         msg = f'Will evaluate based on the difference between measured value and prior value ({old_actual_value} - {prior_value} = {result["actual_value"]})'
         logger.debug(msg)
 
-
      # Otherwise is follows a standard pattern
-    if verification_condition == 'GREATER_THAN':
+    if verification_condition == 'RECORD':
+        operator = 'Record'
+        result['verification_status'] = 'PASS'
+
+    elif verification_condition == 'GREATER_THAN':
         operator = '>'
         if float(result['actual_value']) > float(verification_values[0]):
             result['verification_status'] = 'PASS'
@@ -474,14 +481,14 @@ def evaluate_verify_condition(telemetry, predict, query_timeout):
 
     elif verification_condition == 'GREATER_THAN_OR_EQUAL':
         operator = '>='
-        if float(verification_values[0]) >= float(result['actual_value']) < float(verification_values[1]):
+        if float(result['actual_value']) >= float(verification_values[0]):
             result['verification_status'] = 'PASS'
         else:
             result['verification_status'] = 'FAIL'
 
     elif verification_condition == 'LESS_THAN_OR_EQUAL':
         operator = '<='
-        if float(verification_values[0]) <= float(result['actual_value']) < float(verification_values[1]):
+        if float(result['actual_value']) <= float(verification_values[0]):
             result['verification_status'] = 'PASS'
         else:
             result['verification_status'] = 'FAIL'
