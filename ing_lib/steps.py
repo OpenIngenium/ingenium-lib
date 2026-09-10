@@ -463,7 +463,10 @@ def evaluate_verify_condition(telemetry, predict, query_timeout):
      # Otherwise is follows a standard pattern
     if verification_condition == 'RECORD':
         operator = 'Record'
-        result['verification_status'] = 'PASS'
+        if result['data_present']:
+            result['verification_status'] = 'PASS'
+        else:
+            result['verification_status'] = 'FAIL'
 
     elif verification_condition == 'GREATER_THAN':
         operator = '>'

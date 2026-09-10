@@ -266,6 +266,19 @@ def test_evaluate_no_data_states(verify_wait, telemetry, condition, values, time
 
 
 @pytest.mark.parametrize("timed_out", [False, True])
+@pytest.mark.parametrize("dn_eu", ["DN", "EU"])
+@pytest.mark.parametrize("value", [0, "", None, "ON"])
+def test_evaluate_record_passes_when_sample_is_present(timed_out, dn_eu, value):
+    predict = prediction(condition="RECORD", values=[], dn_eu=dn_eu)
+    latest = sample(raw=value) if dn_eu == "DN" else sample(eng=value)
+    telemetry = [sample(), latest]
+    assert_prediction(
+        steps.evaluate_verify_condition(telemetry, predict, timed_out),
+        predict, "PASS", value, latest,
+    )
+
+
+@pytest.mark.parametrize("timed_out", [False, True])
 def test_evaluate_not_present_with_data_fails(timed_out):
     predict = prediction(condition="NOT_PRESENT", values=[])
     telemetry = [sample()]
@@ -319,9 +332,10 @@ def test_interleaved_duplicate_predictions_and_callback_contract(scripted_callba
 
 
 @pytest.mark.parametrize("verify_wait", ["VERIFY", "WAIT"])
+@pytest.mark.parametrize("condition, values", [("EQUAL", [1]), ("RECORD", [])])
 @pytest.mark.parametrize("initial", [{}, {"A": []}])
-def test_no_data_keeps_polling_until_available(scripted_callback, verify_wait, initial):
-    query = [prediction(verify_wait=verify_wait)]
+def test_no_data_keeps_polling_until_available(scripted_callback, verify_wait, condition, values, initial):
+    query = [prediction(condition=condition, values=values, verify_wait=verify_wait)]
     histories = {"A": [sample()]}
     provider = scripted_callback((1, initial), (2, histories))
     result = steps.verify_wait_telemetry(query, provider.callback, START, TIMEOUT)
@@ -433,10 +447,14 @@ def test_input_verification_status_does_not_control_completion(
     assert query == original
 
 
+@pytest.mark.parametrize("verify_wait", ["VERIFY", "WAIT"])
+@pytest.mark.parametrize("condition, values", [("EQUAL", [1]), ("RECORD", [])])
 @pytest.mark.parametrize("elapsed, count", [(14.999999, 2), (15, 1), (15.000001, 1)])
-def test_timeout_boundary_is_checked_after_callback(scripted_callback, elapsed, count):
+def test_timeout_boundary_is_checked_after_callback(
+    scripted_callback, verify_wait, condition, values, elapsed, count,
+):
     assert steps._TELEMETRY_QUERY_MARGIN == 5
-    query = [prediction(verify_wait="WAIT")]
+    query = [prediction(condition=condition, values=values, verify_wait=verify_wait)]
     polls = [(elapsed, {})]
     if count == 2:
         polls.append((15, {}))
