@@ -1,0 +1,62 @@
+{
+    "custom_script_status": "PASS",
+    "inputs": {
+        "start_time": "2025-302T13:17:34",
+        "timeout": 60,
+        "lookback": 60,
+        "flight_cmd": "CMD-1234,ARG1,ARG2",
+        "sim_cmd": "SIM-5678,ARGX",
+        "measured_volts": 60,
+        "file_loc": "/tmp/sample.txt"
+    },
+    "entries": [
+        {
+            "entry_inputs": {
+                "flight_channel": "FC-0010,CHANNEL_NAME",
+                "sim_channel": "SC-0010,CHANNEL_NAME",
+                "flight_evr": "EVR_FLIGHT_1",
+                "sim_evr": "EVR_SIM_1",
+                "bool": true,
+                "enumerated_input": "ENUM_CHOICE_1",
+                "verification_cond": "GREATER_THAN,5,,"
+            },
+            "verification_status": "PASS",
+            "entry_outputs": {
+                "entry_output_1": "0",
+                "entry_output_2": "0",
+                "entry_output_3": 0,
+                "entry_output_4": 0.0,
+                "entry_output_5": 0.0,
+                "entry_output_6": 0
+            },
+            "entry_output_array": []
+        },
+        {
+            "entry_inputs": {
+                "flight_channel": "FC-0020,CHANNEL_NAME",
+                "sim_channel": "SC-0020,CHANNEL_NAME",
+                "flight_evr": "EVR_FLIGHT_2",
+                "sim_evr": "EVR_SIM_2",
+                "bool": false,
+                "enumerated_input": "ENUM_CHOICE_2",
+                "verification_cond": "EQUAL,10,,"
+            },
+            "verification_status": "PASS",
+            "entry_outputs": {
+                "entry_output_1": "1",
+                "entry_output_2": "10",
+                "entry_output_3": 0,
+                "entry_output_4": 0.0,
+                "entry_output_5": 0.0,
+                "entry_output_6": 0
+            },
+            "entry_output_array": []
+        }
+    ],
+    "outputs": {
+        "start_time_date_time": "2025-302T13:17:34.000000",
+        "query_start": "2025-302T13:16:34.000000",
+        "query_end": "2025-302T13:18:34.000000"
+    },
+    "output_summary": "Sending Flight CMD: CMD-1234 and Sim CMD: SIM-5678 at 2025-302T13:17:34\nQuerying Flight Channel:FC-0010 Sim Channel:SC-0010 (EVRs:EVR_FLIGHT_1, EVR_SIM_1) - Value:0\nQuerying Flight Channel:FC-0020 Sim Channel:SC-0020 (EVRs:EVR_FLIGHT_2, EVR_SIM_2) - Value:1\nGenerated: No files because this is the basic version"
+}
