@@ -21,7 +21,7 @@ The repository is organized as follows:
         -   `ProjConfigRestore.py`: Restores project configuration content from a backup file.
         -   `ProjConfigClear.py`: Deletes all project configuration information from an Ingenium server.
         -   `ProjConfigCreateUpdateCS.py`: Creates or updates a custom script on an Ingenium server from XML or JSON input.
-        -   `ProjConfigLoadAMPCSDict.py`: Reads AMPCS XML dictionary files and uploads them to an Ingenium server.
+        -   `ProjConfigLoadDict.py`: Reads XML dictionary files (AMPCS or XTCE format) and uploads them to an Ingenium server.
         -   `ProjConfigPalette.py`: Reads/writes the Step Palette to an Excel file and supports query, diff, and update modes.
     -   `utils/`: Standalone utility scripts.
         -   `ProjConfigV3toV4Convert.py`: Converts verification item (VI) JSON data from API v3 format to v4 format.

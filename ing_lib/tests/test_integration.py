@@ -183,28 +183,28 @@ class TestIngLibIntegration:
     def test_multiple_dictionary_parsing_workflow(self, temp_xml_file, temp_channel_xml_file, 
                                                  temp_evr_xml_file, temp_mil1553_xml_file):
         """Test parsing multiple dictionary types in sequence."""
-        from apps.ProjConfigLoadAMPCSDict import (
-            detect_dictionary_type, parse_command_dictionary, parse_channel_dictionary,
+        from apps.ProjConfigLoadDict import (
+            detect_ampcs_type, parse_command_dictionary, parse_channel_dictionary,
             parse_evr_dictionary, parse_mil1553_dictionary
         )
         
         # Test command dictionary
-        assert detect_dictionary_type(temp_xml_file) == 'commands'
+        assert detect_ampcs_type(temp_xml_file) == 'commands'
         commands = parse_command_dictionary(temp_xml_file)
         assert len(commands) >= 2  # At least FSW and HW commands
         
         # Test channel dictionary  
-        assert detect_dictionary_type(temp_channel_xml_file) == 'channels'
+        assert detect_ampcs_type(temp_channel_xml_file) == 'channels'
         channels = parse_channel_dictionary(temp_channel_xml_file)
         assert len(channels) >= 4  # Multiple channel types
         
         # Test EVR dictionary
-        assert detect_dictionary_type(temp_evr_xml_file) == 'evrs'
+        assert detect_ampcs_type(temp_evr_xml_file) == 'evrs'
         evrs = parse_evr_dictionary(temp_evr_xml_file)
         assert len(evrs) >= 3  # Multiple EVR types
         
         # Test MIL-STD-1553 dictionary
-        assert detect_dictionary_type(temp_mil1553_xml_file) == 'mil1553'
+        assert detect_ampcs_type(temp_mil1553_xml_file) == 'mil1553'
         signals = parse_mil1553_dictionary(temp_mil1553_xml_file)
         assert len(signals) >= 2  # Multiple signal types
         
