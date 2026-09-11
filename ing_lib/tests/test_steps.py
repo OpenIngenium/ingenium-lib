@@ -52,6 +52,10 @@ def assert_prediction(result, predict, status, value=None, details=None):
     }
 
 
+def final_telemetry_result(*args, **kwargs):
+    return list(steps.verify_wait_telemetry(*args, **kwargs))[-1]
+
+
 def assert_calls(provider, count, channels, lookback=0):
     assert provider.calls == [
         (channels, TIMEOUT, lookback, START, steps.ReturnOn.ANY)
@@ -173,7 +177,7 @@ def test_invalid_later_duplicate_is_validated_before_callback(clock):
     original = deepcopy(query)
     provider = Mock(side_effect=AssertionError("Invalid query must not reach the provider"))
     with pytest.raises(steps.InputError):
-        steps.verify_wait_telemetry(query, provider, start_time=START)
+        list(steps.verify_wait_telemetry(query, provider, start_time=START))
     provider.assert_not_called()
     assert query == original
 
@@ -319,7 +323,7 @@ def test_interleaved_duplicate_predictions_and_callback_contract(scripted_callba
         return scripted.callback(channels, timeout, lookback, start_time, return_on)
 
     callback = provider if variant == "identical" else partial(provider, session=context)
-    result = steps.verify_wait_telemetry(query, callback, START, TIMEOUT, 7)
+    result = final_telemetry_result(query, callback, START, TIMEOUT, 7)
     assert_calls(scripted, 1, ["A", "B"], lookback=7)
     assert contexts == ([None] if variant == "identical" else [context])
     assert result["query_matches_predict"] is True
@@ -338,7 +342,7 @@ def test_no_data_keeps_polling_until_available(scripted_callback, verify_wait, c
     query = [prediction(condition=condition, values=values, verify_wait=verify_wait)]
     histories = {"A": [sample()]}
     provider = scripted_callback((1, initial), (2, histories))
-    result = steps.verify_wait_telemetry(query, provider.callback, START, TIMEOUT)
+    result = final_telemetry_result(query, provider.callback, START, TIMEOUT)
     assert_calls(provider, 2, ["A"])
     assert result["query_matches_predict"] is True
     assert result["telemetry"] == histories
@@ -361,7 +365,7 @@ def test_terminal_results_are_retained_by_query_index(scripted_callback, verify_
     ]
     original = deepcopy((query, polls))
     provider = scripted_callback(*enumerate(polls, start=1))
-    result = steps.verify_wait_telemetry(query, provider.callback, START, TIMEOUT)
+    result = final_telemetry_result(query, provider.callback, START, TIMEOUT)
     assert_calls(provider, 3, ["A", "B"])
     assert result["query_matches_predict"] is (verify_status == "PASS")
     assert result["telemetry"] == polls[-1]
@@ -379,7 +383,7 @@ def test_partial_channels_at_deadline_default_missing_histories_to_empty(scripte
              prediction("C", condition="NOT_PRESENT", values=[], verify_wait=verify_wait)]
     histories = {"A": [sample()]}
     provider = scripted_callback((1, histories), (15, histories))
-    result = steps.verify_wait_telemetry(query, provider.callback, START, TIMEOUT)
+    result = final_telemetry_result(query, provider.callback, START, TIMEOUT)
     assert_calls(provider, 2, ["A", "B", "C"])
     assert result["query_matches_predict"] is False
     assert result["telemetry"] == {"A": histories["A"], "B": [], "C": []}
@@ -394,7 +398,7 @@ def test_not_present_with_data_is_immediately_terminal(scripted_callback, verify
     query = [prediction(condition="NOT_PRESENT", values=[], verify_wait=verify_wait)]
     histories = {"A": [sample()]}
     provider = scripted_callback((1, histories))
-    result = steps.verify_wait_telemetry(query, provider.callback, START, TIMEOUT)
+    result = final_telemetry_result(query, provider.callback, START, TIMEOUT)
     assert_calls(provider, 1, ["A"])
     assert result["query_matches_predict"] is False
     assert_prediction(result["predict_results"][0], query[0], "FAIL", 1, histories["A"][-1])
@@ -404,7 +408,7 @@ def test_not_present_with_data_is_immediately_terminal(scripted_callback, verify
 def test_not_present_absence_passes_only_at_deadline(scripted_callback, verify_wait):
     query = [prediction(condition="NOT_PRESENT", values=[], verify_wait=verify_wait)]
     provider = scripted_callback((1, {}), (14.999999, {"A": []}), (15, {}))
-    result = steps.verify_wait_telemetry(query, provider.callback, START, TIMEOUT)
+    result = final_telemetry_result(query, provider.callback, START, TIMEOUT)
     assert_calls(provider, 3, ["A"])
     assert result["query_matches_predict"] is True
     assert result["telemetry"] == {"A": []}
@@ -417,7 +421,7 @@ def test_not_present_failure_is_retained_while_histories_refresh(scripted_callba
     first = sample()
     final = {"B": [sample()]}
     provider = scripted_callback((1, {"A": [first]}), (2, final))
-    result = steps.verify_wait_telemetry(query, provider.callback, START, TIMEOUT)
+    result = final_telemetry_result(query, provider.callback, START, TIMEOUT)
     assert_calls(provider, 2, ["A", "B"])
     assert result["query_matches_predict"] is False
     assert result["telemetry"] == {"A": [], "B": final["B"]}
@@ -439,7 +443,7 @@ def test_input_verification_status_does_not_control_completion(
     polls = [(index, {"A": [sample(value) for value in values[:index]]})
              for index in range(1, len(values) + 1)]
     provider = scripted_callback(*polls)
-    result = steps.verify_wait_telemetry(query, provider.callback, START, TIMEOUT)
+    result = final_telemetry_result(query, provider.callback, START, TIMEOUT)
     assert_calls(provider, len(polls), ["A"])
     assert result["query_matches_predict"] is (expected_status == "PASS")
     assert_prediction(result["predict_results"][0], query[0], expected_status,
@@ -459,7 +463,7 @@ def test_timeout_boundary_is_checked_after_callback(
     if count == 2:
         polls.append((15, {}))
     provider = scripted_callback(*polls)
-    result = steps.verify_wait_telemetry(query, provider.callback, START, TIMEOUT, 200)
+    result = final_telemetry_result(query, provider.callback, START, TIMEOUT, 200)
     assert_calls(provider, count, ["A"], lookback=200)
     assert result["query_matches_predict"] is False
     assert result["telemetry"] == {"A": []}
@@ -471,7 +475,7 @@ def test_wait_failed_comparisons_retry_until_deadline(scripted_callback):
     polls = [(1, {"A": [sample(0)]}), (14.999999, {"A": [sample(0), sample(2)]}),
              (15, {"A": [sample(0), sample(2), sample(3)]})]
     provider = scripted_callback(*polls)
-    result = steps.verify_wait_telemetry(query, provider.callback, START, TIMEOUT)
+    result = final_telemetry_result(query, provider.callback, START, TIMEOUT)
     assert_calls(provider, 3, ["A"])
     assert result["query_matches_predict"] is False
     assert result["telemetry"] == polls[-1][1]
@@ -483,7 +487,7 @@ def test_wait_can_pass_on_callback_that_crosses_deadline(scripted_callback, cloc
     clock.current = START + timedelta(seconds=14)
     histories = {"A": [sample()]}
     provider = scripted_callback((16, histories))
-    result = steps.verify_wait_telemetry(query, provider.callback, START, TIMEOUT)
+    result = final_telemetry_result(query, provider.callback, START, TIMEOUT)
     assert_calls(provider, 1, ["A"])
     assert result["query_matches_predict"] is True
     assert_prediction(result["predict_results"][0], query[0], "PASS", 1, histories["A"][-1])
@@ -496,7 +500,7 @@ def test_historical_nonempty_query_fetches_once(scripted_callback, clock, verify
     query = [prediction(verify_wait=verify_wait)]
     history = [] if raw is None else [sample(raw)]
     provider = scripted_callback((16, {"A": history}))
-    result = steps.verify_wait_telemetry(query, provider.callback, START, TIMEOUT)
+    result = final_telemetry_result(query, provider.callback, START, TIMEOUT)
     assert_calls(provider, 1, ["A"])
     assert result["query_matches_predict"] is (status == "PASS")
     assert result["telemetry"] == {"A": history}
@@ -508,7 +512,7 @@ def test_default_start_time_is_one_captured_utc_origin(scripted_callback):
     query = [prediction("B"), prediction("A", verify_wait="WAIT"), prediction("B")]
     provider = scripted_callback((1, {"B": [sample()]}),
                                  (2, {"B": [sample()], "A": [sample()]}))
-    result = steps.verify_wait_telemetry(query, provider.callback, timeout=TIMEOUT, lookback=9)
+    result = final_telemetry_result(query, provider.callback, timeout=TIMEOUT, lookback=9)
     assert_calls(provider, 2, ["B", "A"], lookback=9)
     assert all(call[3].tzinfo is timezone.utc for call in provider.calls)
     assert result["query_matches_predict"] is True
@@ -516,8 +520,9 @@ def test_default_start_time_is_one_captured_utc_origin(scripted_callback):
 
 def test_empty_query_succeeds_without_callback(clock):
     provider = Mock(side_effect=AssertionError("Empty query must not reach the provider"))
-    assert steps.verify_wait_telemetry([], provider, START, TIMEOUT) == {
+    assert final_telemetry_result([], provider, START, TIMEOUT) == {
         "query_matches_predict": True, "predict_results": [], "telemetry": {},
+        "query_complete": True, "query_timeout": False, "predict_complete": [],
     }
     provider.assert_not_called()
 
@@ -530,19 +535,20 @@ def test_evaluator_error_is_terminal_and_unsuccessful(scripted_callback, verify_
                     "verification_status": "ERROR", "data_present": False, "telem_details": None}
     provider = scripted_callback((1, {"A": []}))
     with patch.object(steps, "evaluate_verify_condition", return_value=error_result) as evaluate:
-        result = steps.verify_wait_telemetry(query, provider.callback, START, TIMEOUT)
+        result = final_telemetry_result(query, provider.callback, START, TIMEOUT)
     assert_calls(provider, 1, ["A"])
     evaluate.assert_called_once_with([], query[0], False)
     assert result["query_matches_predict"] is False
     assert result["predict_results"] == [error_result]
     assert result["telemetry"] == {"A": []}
+    assert_completion(result, True, False, [True])
 
 
 def test_callback_exception_propagates_without_retry(clock):
     error = RuntimeError("provider unavailable")
     provider = Mock(side_effect=error)
     with pytest.raises(RuntimeError) as raised:
-        steps.verify_wait_telemetry([prediction()], provider, START, TIMEOUT)
+        list(steps.verify_wait_telemetry([prediction()], provider, START, TIMEOUT))
     assert raised.value is error
     provider.assert_called_once_with(["A"], TIMEOUT, 0, START, steps.ReturnOn.ANY)
 
@@ -555,5 +561,176 @@ def test_callback_exception_propagates_without_retry(clock):
 def test_real_evaluator_exceptions_propagate_without_retry(scripted_callback, overrides, raw, error_type):
     provider = scripted_callback((1, {"A": [sample(raw)]}))
     with pytest.raises(error_type):
-        steps.verify_wait_telemetry([prediction(**overrides)], provider.callback, START, TIMEOUT)
+        list(steps.verify_wait_telemetry([prediction(**overrides)], provider.callback, START, TIMEOUT))
+    assert_calls(provider, 1, ["A"])
+
+
+def assert_completion(result, complete, timed_out, predictions):
+    assert result["query_complete"] is complete
+    assert result["query_timeout"] is timed_out
+    assert result["predict_complete"] == predictions
+
+
+@pytest.mark.parametrize("final_value, elapsed, status", [(1, 3, "PASS"), (2, 15, "FAIL")])
+def test_stream_yields_each_poll_and_stops(scripted_callback, final_value, elapsed, status):
+    query = [prediction(verify_wait="WAIT")]
+    provider = scripted_callback((1, {}), (2, {"A": [sample(0)]}),
+                                 (elapsed, {"A": [sample(final_value)]}))
+    stream = steps.verify_wait_telemetry(query, provider.callback, START, TIMEOUT)
+    assert provider.calls == []
+    for index, expected_status in enumerate(("PENDING", "FAIL", status), start=1):
+        result = next(stream)
+        assert_calls(provider, index, ["A"])
+        assert result["predict_results"][0]["verification_status"] == expected_status
+        assert result["query_matches_predict"] is (expected_status == "PASS")
+        assert_completion(result, index == 3, index == 3 and elapsed == 15, [index == 3])
+    with pytest.raises(StopIteration) as stopped:
+        next(stream)
+    assert stopped.value.value is None
+    assert_calls(provider, 3, ["A"])
+
+
+def test_stream_empty_query_yields_once(clock):
+    provider = Mock()
+    assert list(steps.verify_wait_telemetry([], provider, START, TIMEOUT)) == [{
+        "query_matches_predict": True, "predict_results": [], "telemetry": {},
+        "query_complete": True, "query_timeout": False, "predict_complete": [],
+    }]
+    provider.assert_not_called()
+
+
+def test_stream_single_terminal_poll(scripted_callback):
+    provider = scripted_callback((1, {"A": [sample()]}))
+    updates = list(steps.verify_wait_telemetry([prediction()], provider.callback, START, TIMEOUT))
+    assert len(updates) == 1
+    assert_completion(updates[0], True, False, [True])
+    assert_calls(provider, 1, ["A"])
+
+
+def test_stream_validation_is_lazy_and_precedes_polling(clock):
+    provider = Mock()
+    stream = steps.verify_wait_telemetry([prediction(dn_eu="INVALID")], provider, START, TIMEOUT)
+    provider.assert_not_called()
+    with pytest.raises(steps.InputError):
+        next(stream)
+    provider.assert_not_called()
+
+
+def test_stream_captures_default_origin_on_first_iteration(clock):
+    provider = Mock(return_value={"A": [sample()]})
+    stream = steps.verify_wait_telemetry([prediction()], provider, timeout=TIMEOUT)
+    clock.current = START + timedelta(seconds=20)
+    result = next(stream)
+    provider.assert_called_once_with(["A"], TIMEOUT, 0, clock.current, steps.ReturnOn.ANY)
+    assert_completion(result, True, False, [True])
+
+
+def test_stream_duplicate_predictions_retain_terminal_values(scripted_callback):
+    query = [prediction(values=[2]), prediction("B", verify_wait="WAIT"),
+             prediction(values=[8], verify_wait="WAIT"), prediction(values=[9])]
+    early, late = sample(2), sample(8)
+    provider = scripted_callback((1, {"A": [early]}),
+                                 (2, {"A": [early, late], "B": [sample()]}))
+    first, final = list(steps.verify_wait_telemetry(query, provider.callback, START, TIMEOUT))
+    assert_completion(first, False, False, [True, False, False, True])
+    assert_completion(final, True, False, [True, True, True, True])
+    assert [item["verification_status"] for item in first["predict_results"]] == [
+        "PASS", "PENDING", "FAIL", "FAIL",
+    ]
+    assert [item["actual_value"] for item in final["predict_results"]] == [2, 1, 8, 2]
+    assert final["query_matches_predict"] is False
+    assert first["telemetry"]["A"] == [early]
+    assert final["telemetry"]["A"] == [early, late]
+
+
+def test_stream_identical_polls_and_missing_channels_at_timeout(scripted_callback):
+    query = [prediction("A", condition="NOT_PRESENT", values=[]),
+             prediction("B", verify_wait="WAIT")]
+    provider = scripted_callback((1, {}), (2, {}), (15, {}))
+    updates = list(steps.verify_wait_telemetry(query, provider.callback, START, TIMEOUT))
+    assert len(updates) == 3
+    assert updates[0] == updates[1]
+    for result in updates[:2]:
+        assert_completion(result, False, False, [False, False])
+        assert [item["verification_status"] for item in result["predict_results"]] == ["PENDING", "PENDING"]
+    assert_completion(updates[-1], True, True, [True, True])
+    assert [item["verification_status"] for item in updates[-1]["predict_results"]] == ["PASS", "FAIL"]
+    assert updates[-1]["query_matches_predict"] is False
+
+
+def test_stream_not_present_failure_remains_terminal(scripted_callback):
+    query = [prediction(condition="NOT_PRESENT", values=[], verify_wait="WAIT"),
+             prediction("B", verify_wait="WAIT")]
+    provider = scripted_callback((1, {"A": [sample()]}), (2, {"B": [sample()]}))
+    first, final = list(steps.verify_wait_telemetry(query, provider.callback, START, TIMEOUT))
+    assert_completion(first, False, False, [True, False])
+    assert_completion(final, True, False, [True, True])
+    assert first["predict_results"][0] == final["predict_results"][0]
+    assert final["telemetry"]["A"] == []
+
+
+def test_stream_snapshots_are_isolated_from_provider_mutation(clock):
+    query = [prediction(verify_wait="WAIT")]
+    histories = {"A": [sample(0)]}
+    stream = steps.verify_wait_telemetry(query, lambda *args: histories, START, TIMEOUT)
+    first = next(stream)
+    saved = deepcopy(first)
+    histories["A"][0]["raw_value"] = 2
+    histories["A"].append(sample())
+    final = next(stream)
+    assert first == saved
+    assert final["telemetry"] == histories
+    assert_completion(final, True, False, [True])
+    with pytest.raises(StopIteration):
+        next(stream)
+
+
+def test_stream_consumer_mutations_do_not_affect_live_state(scripted_callback):
+    query = [prediction(verify_wait="WAIT")]
+    histories = {"A": [sample(0)]}
+    final_histories = {"A": [sample()]}
+    original = deepcopy((query, histories, final_histories))
+    provider = scripted_callback((1, histories), (2, final_histories))
+    stream = steps.verify_wait_telemetry(query, provider.callback, START, TIMEOUT)
+    first = next(stream)
+    first["predict_results"][0]["predict"]["verification_values"][0] = 99
+    first["predict_results"][0]["telem_details"]["raw_value"] = 99
+    first["telemetry"]["A"].append(sample(99))
+    first["predict_complete"][0] = True
+    first["predict_results"].clear()
+    final = next(stream)
+    assert (query, histories, final_histories) == original
+    assert_prediction(final["predict_results"][0], query[0], "PASS", 1, final_histories["A"][-1])
+    assert_completion(final, True, False, [True])
+    assert final["telemetry"] == final_histories
+    with pytest.raises(StopIteration):
+        next(stream)
+    assert_calls(provider, 2, ["A"])
+
+
+@pytest.mark.parametrize("failure", ["provider", "evaluator"])
+def test_stream_exception_after_update_propagates_without_final_event(clock, failure):
+    error = RuntimeError("provider unavailable")
+    provider = Mock(side_effect=[{}, error if failure == "provider" else {"A": [sample("text")]}])
+    query = [prediction(condition="GREATER_THAN", verify_wait="WAIT")]
+    stream = steps.verify_wait_telemetry(query, provider, START, TIMEOUT)
+    first = next(stream)
+    saved = deepcopy(first)
+    with pytest.raises(RuntimeError if failure == "provider" else ValueError) as raised:
+        next(stream)
+    if failure == "provider":
+        assert raised.value is error
+    assert first == saved
+    with pytest.raises(StopIteration):
+        next(stream)
+    assert provider.call_count == 2
+
+
+def test_stream_close_prevents_more_polls(scripted_callback):
+    provider = scripted_callback((1, {}))
+    stream = steps.verify_wait_telemetry([prediction()], provider.callback, START, TIMEOUT)
+    assert_completion(next(stream), False, False, [False])
+    stream.close()
+    with pytest.raises(StopIteration):
+        next(stream)
     assert_calls(provider, 1, ["A"])

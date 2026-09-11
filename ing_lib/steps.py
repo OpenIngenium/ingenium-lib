@@ -9,6 +9,8 @@ Authors:
 #################################################### Imports ####################################################
 
 from collections import OrderedDict
+from collections.abc import Iterator
+from copy import deepcopy
 import traceback
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -234,7 +236,7 @@ def confirm_numeric(value):
         return False
 
 
-def verify_wait_telemetry(query: list, telemetry_query_func: callable, start_time: datetime = None, timeout: int = 60, lookback: int = 0) -> dict:
+def verify_wait_telemetry(query: list, telemetry_query_func: callable, start_time: datetime = None, timeout: int = 60, lookback: int = 0) -> Iterator[dict]:
     """
     This function will query for telemetry and compare vs. a predict
     Parameters
@@ -265,17 +267,34 @@ def verify_wait_telemetry(query: list, telemetry_query_func: callable, start_tim
         How much time to look for the channels, from the start_time, before giving up (default 60)
     lookback: int
         How much time to "look back" from the start_time for the channel (default 0)
-    Returns
-    -------
+    Yields
+    ------
     results: dict
-        Dictionary of Dictionary of the results indexed by channel with an overall status of all values
-        Example:
-        {'query_matches_predict' : True,
-         'predict_results' : [{'actual_value' : '43', 'verification_status' : 'PASS', 'channel_details' : dict}, ...],
-         'telemetry' :  {'CMD-1234' : [{'time': '2025-10-15T12:00:00Z', 'dn': '43', ...}],
-                         'CMD-1235' : [{'time': '2025-10-15T12:00:00Z', 'eu': '43', ...},
-                          ...]}
-        }
+        Independent deep-copied snapshots after each evaluated poll, including
+        unchanged polls and the terminal poll. Each snapshot contains:
+        query_matches_predict: True only when all prediction statuses are PASS.
+        predict_results: Evaluated predictions in query order.
+        telemetry: Latest provider histories indexed by telemetry UUID.
+        query_complete: True when all predictions are terminal, not necessarily PASS.
+        query_timeout: Whether the post-poll timeout check reached the deadline.
+        predict_complete: Terminal flags aligned with predict_results and query.
+        A WAIT prediction can be FAIL while its completion flag remains False.
+        Completed predictions retain their evaluated values as histories refresh.
+        Empty queries yield one successful terminal snapshot without polling.
+
+    Notes
+    -----
+    This function returns an iterator, not a final-result dictionary. Validation
+    and default start-time capture occur on first iteration. Exceptions propagate
+    during iteration. Polling pauses between iterations and no updates are emitted
+    while the synchronous provider is blocked. Closing the iterator stops polling.
+    On normal completion, the last yielded snapshot is final; exhaustion returns
+    no additional result. Exceptions or early closure may leave only partial results.
+
+    Examples
+    --------
+    for result in verify_wait_telemetry(query, telemetry_query_func):
+        process_update(result)
     """
 
     # Validate the query (will raise exception)
@@ -283,12 +302,16 @@ def verify_wait_telemetry(query: list, telemetry_query_func: callable, start_tim
 
     results = {'query_matches_predict': True,
                'predict_results': [None] * len(query),
-               'telemetry': {}}
+               'telemetry': {},
+               'query_complete': not query,
+               'query_timeout': False,
+               'predict_complete': [False] * len(query)}
 
     if not query:
-        return results
+        yield deepcopy(results)
+        return
 
-    predict_complete = [False] * len(query)
+    predict_complete = results['predict_complete']
 
     # Set the boundaries of the query
     if start_time is None:
@@ -358,7 +381,10 @@ def verify_wait_telemetry(query: list, telemetry_query_func: callable, start_tim
             if status != 'PASS':
                 results['query_matches_predict'] = False
 
-    return results
+        results['query_complete'] = query_complete
+        results['query_timeout'] = query_timeout
+        results['predict_complete'] = predict_complete
+        yield deepcopy(results)
 
 
 def evaluate_verify_condition(telemetry, predict, query_timeout):
@@ -546,6 +572,25 @@ def evaluate_verify_condition(telemetry, predict, query_timeout):
     logger.info(msg)
     return result
 
+
+def get_telem_prior_value(input_dict, telem_name):
+    """
+    Look up a telemetry point's prior value from the pre-populated input state, used
+    when an entry's verify_on == 'CHANGE'.
+
+    Parameters
+    ----------
+    input_dict: dict
+        The full custom script input dictionary
+    telem_name: str
+        The telem name to look up
+
+    Returns
+    -------
+    The prior value if present, otherwise None
+    """
+    channel_variables = input_dict.get('states', {}).get('variables', {}).get('channel_variables', {})
+    return channel_variables.get(telem_name)
 
 def get_input_output_paths(error_msg):
     '''
