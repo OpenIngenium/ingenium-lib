@@ -335,6 +335,61 @@ def test_interleaved_duplicate_predictions_and_callback_contract(scripted_callba
     assert (query, histories) == original
 
 
+def test_complex_multi_channel_query_mixes_wait_verify_conditions_and_outcomes(scripted_callback):
+    query = [
+        prediction("A", values=[1]),
+        prediction("B", condition="GREATER_THAN", values=[5]),
+        prediction("C", values=[7], verify_wait="WAIT"),
+        prediction("D", condition="LESS_THAN", values=[5], verify_wait="WAIT"),
+        prediction("E", condition="NOT_PRESENT", values=[]),
+        prediction("F", condition="NOT_PRESENT", values=[], verify_wait="WAIT"),
+        prediction("G", condition="RECORD", values=[], dn_eu="EU", verify_wait="WAIT"),
+        prediction("H", values=[2], bit_mask="3", bit_op="AND"),
+    ]
+    poll_one = {
+        "A": [sample(raw=1)],
+        "B": [sample(raw=2)],
+        "C": [],
+        "D": [],
+        "E": [],
+        "F": [],
+        "G": [],
+        "H": [sample(raw=10)],
+    }
+    poll_two = {
+        "A": poll_one["A"],
+        "B": poll_one["B"],
+        "C": [sample(raw=7)],
+        "D": [sample(raw=8)],
+        "E": [],
+        "F": [sample(raw=1)],
+        "G": [sample(raw=0, eng="READY")],
+        "H": poll_one["H"],
+    }
+    poll_three = {**poll_two, "E": []}
+    provider = scripted_callback((1, poll_one), (5, poll_two), (15, poll_three))
+
+    result = final_telemetry_result(query, provider.callback, START, TIMEOUT)
+
+    assert_calls(provider, 3, list("ABCDEFGH"))
+    assert result["query_complete"] is True
+    assert result["query_timeout"] is True
+    assert result["query_matches_predict"] is False
+    assert result["predict_complete"] == [True] * len(query)
+    assert [item["verification_status"] for item in result["predict_results"]] == [
+        "PASS", "FAIL", "PASS", "FAIL", "PASS", "FAIL", "PASS", "PASS",
+    ]
+    assert result["telemetry"] == poll_three
+    assert result["predict_results"][0]["actual_value"] == 1
+    assert result["predict_results"][1]["actual_value"] == 2
+    assert result["predict_results"][2]["actual_value"] == 7
+    assert result["predict_results"][3]["actual_value"] == 8
+    assert result["predict_results"][4]["data_present"] is False
+    assert result["predict_results"][5]["actual_value"] == 1
+    assert result["predict_results"][6]["actual_value"] == "READY"
+    assert result["predict_results"][7]["actual_value"] == 2
+
+
 @pytest.mark.parametrize("verify_wait", ["VERIFY", "WAIT"])
 @pytest.mark.parametrize("condition, values", [("EQUAL", [1]), ("RECORD", [])])
 @pytest.mark.parametrize("initial", [{}, {"A": []}])
