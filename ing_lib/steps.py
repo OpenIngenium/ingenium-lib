@@ -246,6 +246,9 @@ def check_telemetry_query(query: list) -> None:
             logger.error(msg)
             raise InputError(msg)
 
+        bit_mask = predict.get('bit_mask')
+        has_bit_mask = bit_mask not in [None, 'None']
+
         # If there is bit mask operation ensure a mask is provided and the verification values are numeric
         if predict.get('bit_op'):
             # Confirm correct types of bit operations
@@ -254,7 +257,7 @@ def check_telemetry_query(query: list) -> None:
                 logger.error(msg)
                 raise InputError(msg)
             # Ensure that if a bit operation is present a mask is present
-            if predict.get('bit_mask') is None:
+            if not has_bit_mask:
                 msg = f'Predicts with a bit operation require a bit mask.'
                 logger.error(msg)
                 raise InputError(msg)
@@ -265,8 +268,8 @@ def check_telemetry_query(query: list) -> None:
                     logger.error(msg)
                     raise InputError(msg)
 
-        if predict.get('bit_mask') is not None and not predict.get('bit_op'):
-            msg = f'A bit mask f{predict.get("bit_mask")} without a bit operation is invalid.'
+        if has_bit_mask and not predict.get('bit_op'):
+            msg = f'A bit mask f{bit_mask} without a bit operation is invalid.'
             logger.error(msg)
             raise InputError(msg)
 

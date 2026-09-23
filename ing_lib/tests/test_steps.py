@@ -194,8 +194,8 @@ def test_query_validation_rejects_wrong_operator_arities(condition, count):
     [{"dn_eu": "RAW"}, {"verify_wait": "RETRY"},
      {"verification_condition": "UNKNOWN"},
      {"bit_op": "XOR", "bit_mask": "3"}, {"bit_op": "AND"},
-     {"bit_op": "OR", "bit_mask": None}, {"bit_mask": "3"},
-     {"bit_mask": 0}, {"bit_mask": "3", "bit_op": None},
+     {"bit_op": "OR", "bit_mask": None}, {"bit_op": "AND", "bit_mask": "None"},
+     {"bit_mask": "3"}, {"bit_mask": 0}, {"bit_mask": "3", "bit_op": None},
      {"bit_mask": "3", "bit_op": "AND", "verification_values": ["text"]},
      {"prior_value": "text"}, {"prior_value": 0, "verification_values": ["text"]}],
 )
@@ -206,8 +206,8 @@ def test_query_validation_rejects_invalid_configuration(overrides):
 
 @pytest.mark.parametrize(
     "overrides",
-    [{}, {"bit_mask": None, "bit_op": None}, {"prior_value": 0},
-     {"prior_value": "2.5", "verification_values": ["3"]},
+    [{}, {"bit_mask": None, "bit_op": None}, {"bit_mask": "None", "bit_op": None},
+     {"prior_value": 0}, {"prior_value": "2.5", "verification_values": ["3"]},
      {"bit_mask": 0, "bit_op": "AND"},
      {"dn_eu": "EU", "verify_wait": "WAIT", "bit_mask": "0X03", "bit_op": "OR"}],
 )
