@@ -114,6 +114,77 @@ def apply_bit_mask(input_value, bit_mask, bit_op):
     return int(output_value)
 
 
+def translate_verification_conditions(verification_conditions: str) -> dict:
+    """
+    Translate Ingenium's comma-delimited verification condition into a telemetry
+    prediction dictionary.
+
+    Ingenium supplies verification conditions as a four-field string. The
+    condition is at index 0, single-value conditions use index 1, and range
+    conditions use indexes 2 and 3. Unused values are commonly represented by
+    empty strings.
+
+    Parameters
+    ----------
+    verification_conditions: str
+        Ingenium verification condition in the form
+        ``condition,value,lower_bound,upper_bound``.
+
+    Returns
+    -------
+    dict
+        A dictionary containing ``verification_condition`` and
+        ``verification_values``, suitable for use in a telemetry prediction.
+
+    Raises
+    ------
+    InputError
+        If the input is not a four-field string or contains invalid values.
+    """
+    if not isinstance(verification_conditions, str):
+        raise InputError('verification_conditions must be a comma-delimited string.')
+
+    verification_conditions = [value.strip() for value in verification_conditions.split(',')]
+    if len(verification_conditions) != 4 or not verification_conditions[0]:
+        raise InputError(
+            'verification_conditions must contain four comma-delimited fields.'
+        )
+
+    condition = verification_conditions[0]
+    if condition in ['RECORD', 'NOT_PRESENT']:
+        values = []
+    elif condition in ['GREATER_THAN', 'GREATER_THAN_OR_EQUAL', 'LESS_THAN',
+                       'LESS_THAN_OR_EQUAL', 'EQUAL', 'NOT_EQUAL', 'CONTAINS']:
+        values = verification_conditions[1:2]
+    elif condition in ['INCLUSIVE_RANGE', 'EXCLUSIVE_RANGE']:
+        values = verification_conditions[2:4]
+    else:
+        raise InputError(f'Unknown Verification Condition: {condition}')
+
+    expected_values = {
+        'RECORD': 0,
+        'NOT_PRESENT': 0,
+        'GREATER_THAN': 1,
+        'GREATER_THAN_OR_EQUAL': 1,
+        'LESS_THAN': 1,
+        'LESS_THAN_OR_EQUAL': 1,
+        'EQUAL': 1,
+        'NOT_EQUAL': 1,
+        'CONTAINS': 1,
+        'INCLUSIVE_RANGE': 2,
+        'EXCLUSIVE_RANGE': 2,
+    }[condition]
+    if len(values) != expected_values or any(value in (None, '') for value in values):
+        raise InputError(
+            f'Verification condition: {condition} has invalid verification values: {values}'
+        )
+
+    return {
+        'verification_condition': condition,
+        'verification_values': values,
+    }
+
+
 def check_telemetry_query(query: list) -> None:
     """
     This function checks the provided telemetry query to ensure it is well formed
@@ -148,7 +219,7 @@ def check_telemetry_query(query: list) -> None:
                 logger.error(msg)
                 raise InputError(msg)
         elif predict['verification_condition'] in ['GREATER_THAN', 'GREATER_THAN_OR_EQUAL', 'LESS_THAN',
-                                                   'LESS_THAN_OR_EQUAL', 'EQUAL', 'NOT_EQUAL']:
+                                                   'LESS_THAN_OR_EQUAL', 'EQUAL', 'NOT_EQUAL', 'CONTAINS']:
             if len(predict.get('verification_values')) != 1:
                 msg = f'Verification condition: {predict["verification_condition"]} requires one verification value. (Provided: {predict.get("verification_values")}'
                 logger.error(msg)
@@ -553,6 +624,13 @@ def evaluate_verify_condition(telemetry, predict, query_timeout):
                 result['verification_status'] = 'PASS'
             else:
                 result['verification_status'] = 'FAIL'
+
+    elif verification_condition == 'CONTAINS':
+        operator = 'contains'
+        if isinstance(result['actual_value'], str) and str(verification_values[0]) in result['actual_value']:
+            result['verification_status'] = 'PASS'
+        else:
+            result['verification_status'] = 'FAIL'
 
     elif verification_condition == 'INCLUSIVE_RANGE':
         operator = 'Inclusive Range'
