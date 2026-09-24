@@ -20,6 +20,7 @@ ARITIES = [
     ("LESS_THAN_OR_EQUAL", 1),
     ("EQUAL", 1),
     ("NOT_EQUAL", 1),
+    ("CONTAINS", 1),
     ("INCLUSIVE_RANGE", 2),
     ("EXCLUSIVE_RANGE", 2),
 ]
@@ -106,6 +107,48 @@ def test_confirm_numeric(value, expected):
 
 
 @pytest.mark.parametrize(
+    "verification_conditions, expected",
+    [
+        ("RECORD,,,", {
+            "verification_condition": "RECORD",
+            "verification_values": [],
+        }),
+        ("GREATER_THAN,5,,", {
+            "verification_condition": "GREATER_THAN",
+            "verification_values": ["5"],
+        }),
+        ("EQUAL,ON,,", {
+            "verification_condition": "EQUAL",
+            "verification_values": ["ON"],
+        }),
+        ("CONTAINS,READY,,", {
+            "verification_condition": "CONTAINS",
+            "verification_values": ["READY"],
+        }),
+        ("INCLUSIVE_RANGE,,3,7", {
+            "verification_condition": "INCLUSIVE_RANGE",
+            "verification_values": ["3", "7"],
+        }),
+        ("EXCLUSIVE_RANGE,,3,7", {
+            "verification_condition": "EXCLUSIVE_RANGE",
+            "verification_values": ["3", "7"],
+        }),
+    ],
+)
+def test_translate_verification_conditions(verification_conditions, expected):
+    assert steps.translate_verification_conditions(verification_conditions) == expected
+
+
+@pytest.mark.parametrize(
+    "verification_conditions",
+    ["", "EQUAL,,,", "INCLUSIVE_RANGE,,3,"],
+)
+def test_translate_verification_conditions_rejects_invalid_values(verification_conditions):
+    with pytest.raises(steps.InputError):
+        steps.translate_verification_conditions(verification_conditions)
+
+
+@pytest.mark.parametrize(
     "mask, and_value, or_value",
     [("0b0011", 2, 11), ("0B0011", 2, 11), ("0x03", 2, 11),
      ("0X03", 2, 11), ("3", 2, 11), (3, 2, 11), ("0", 0, 10), (0, 0, 10)],
@@ -151,8 +194,8 @@ def test_query_validation_rejects_wrong_operator_arities(condition, count):
     [{"dn_eu": "RAW"}, {"verify_wait": "RETRY"},
      {"verification_condition": "UNKNOWN"},
      {"bit_op": "XOR", "bit_mask": "3"}, {"bit_op": "AND"},
-     {"bit_op": "OR", "bit_mask": None}, {"bit_mask": "3"},
-     {"bit_mask": 0}, {"bit_mask": "3", "bit_op": None},
+     {"bit_op": "OR", "bit_mask": None}, {"bit_op": "AND", "bit_mask": "None"},
+     {"bit_mask": "3"}, {"bit_mask": 0}, {"bit_mask": "3", "bit_op": None},
      {"bit_mask": "3", "bit_op": "AND", "verification_values": ["text"]},
      {"prior_value": "text"}, {"prior_value": 0, "verification_values": ["text"]}],
 )
@@ -163,8 +206,8 @@ def test_query_validation_rejects_invalid_configuration(overrides):
 
 @pytest.mark.parametrize(
     "overrides",
-    [{}, {"bit_mask": None, "bit_op": None}, {"prior_value": 0},
-     {"prior_value": "2.5", "verification_values": ["3"]},
+    [{}, {"bit_mask": None, "bit_op": None}, {"bit_mask": "None", "bit_op": None},
+     {"prior_value": 0}, {"prior_value": "2.5", "verification_values": ["3"]},
      {"bit_mask": 0, "bit_op": "AND"},
      {"dn_eu": "EU", "verify_wait": "WAIT", "bit_mask": "0X03", "bit_op": "OR"}],
 )
@@ -207,7 +250,10 @@ def test_invalid_later_duplicate_is_validated_before_callback(clock):
      ("EQUAL", ["5.0"], 5, "PASS"), ("EQUAL", [5], "6", "FAIL"),
      ("NOT_EQUAL", [5], "5.0", "FAIL"), ("NOT_EQUAL", ["5"], 6, "PASS"),
      ("EQUAL", ["ON"], "ON", "PASS"), ("EQUAL", ["ON"], "OFF", "FAIL"),
-     ("NOT_EQUAL", ["ON"], "ON", "FAIL"), ("NOT_EQUAL", ["ON"], "OFF", "PASS")],
+     ("NOT_EQUAL", ["ON"], "ON", "FAIL"), ("NOT_EQUAL", ["ON"], "OFF", "PASS"),
+     ("CONTAINS", ["READY"], "SYSTEM_READY", "PASS"),
+     ("CONTAINS", ["ERROR"], "SYSTEM_READY", "FAIL"),
+     ("CONTAINS", ["1"], 1, "FAIL")],
 )
 def test_evaluate_comparison_operators(condition, values, actual, status):
     predict = prediction(condition=condition, values=values)
