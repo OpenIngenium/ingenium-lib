@@ -662,7 +662,8 @@ def get_telem_prior_value(input_dict, telem_name):
     Parameters
     ----------
     input_dict: dict
-        The full custom script input dictionary
+        The full custom script input dictionary. Prior values live in
+        ``input_dict['states']['channel_variables']``, keyed by telem_uuid.
     telem_name: str
         The telem name to look up
 
@@ -670,8 +671,13 @@ def get_telem_prior_value(input_dict, telem_name):
     -------
     The prior value if present, otherwise None
     """
-    channel_variables = input_dict.get('states', {}).get('variables', {}).get('channel_variables', {})
-    return channel_variables.get(telem_name)
+    channel_variables = (input_dict or {}).get('states', {}).get('channel_variables') or {}
+
+    if telem_name in channel_variables:
+        return channel_variables[telem_name]
+
+    logger.info(f'No prior value found for telemetry: {telem_name}')
+    return None
 
 def get_input_output_paths(error_msg):
     '''

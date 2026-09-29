@@ -835,3 +835,46 @@ def test_stream_close_prevents_more_polls(scripted_callback):
     with pytest.raises(StopIteration):
         next(stream)
     assert_calls(provider, 1, ["A"])
+
+
+PRIOR_VALUE_INPUT = {
+    "username": "test_user",
+    "states": {
+        "variables": {},
+        "channel_variables": {"CHANNEL_NAME": 7},
+        "manual_input_variables": {},
+        "mil_1553_variables": {},
+    },
+    "inputs": {"start_time": "2026-272T18:49:45", "timeout": 60, "lookback": 30},
+    "entries": [{"entry_inputs": {"telem_name": ",CHANNEL_NAME"}}],
+}
+
+
+def test_prior_value_read_from_states_channel_variables():
+    assert steps.get_telem_prior_value(PRIOR_VALUE_INPUT, "CHANNEL_NAME") == 7
+
+
+@pytest.mark.parametrize("telem_name", [
+    ",CHANNEL_NAME",
+    "CHANNEL_NAME,",
+    "OTHER_CHANNEL_NAME",
+])
+def test_prior_value_requires_exact_key_match(telem_name):
+    assert steps.get_telem_prior_value(PRIOR_VALUE_INPUT, telem_name) is None
+
+
+@pytest.mark.parametrize("input_dict", [
+    {},
+    {"states": {}},
+    {"states": {"channel_variables": None}},
+    {"states": {"variables": {"channel_variables": {"A": 1}}}},
+])
+def test_prior_value_missing_state_returns_none(input_dict):
+    assert steps.get_telem_prior_value(input_dict, "A") is None
+
+
+def test_prior_value_preserves_falsey_values():
+    input_dict = {"states": {"channel_variables": {"A": 0, "B": False, "C": None}}}
+    assert steps.get_telem_prior_value(input_dict, "A") == 0
+    assert steps.get_telem_prior_value(input_dict, "B") is False
+    assert steps.get_telem_prior_value(input_dict, "C") is None
