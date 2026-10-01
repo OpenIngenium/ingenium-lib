@@ -13,6 +13,11 @@ from ing_lib.common import _auth_header,dictionary_endpoint,get_ssl_verify
 from ing_lib.common import IngeniumLibError,response_handler,ingenium_rest_get,ingenium_rest_get_paginated
 from ing_lib.logs import get_logger
 
+##################################################### Constants ######################################################
+
+# Maximum number of dictionary/VI elements to include in a single create request
+MAX_UPLOAD_BATCH_SIZE = 10000
+
 ##################################################### Functions ######################################################
 
 logger = get_logger(__name__)
@@ -373,6 +378,66 @@ def update_dictionary_version(server, flight_sse, dictionary_version, content):
     return data
 
 
+def _post_content_in_batches(endpoint, content):
+    """
+    Posts an array of content to an endpoint in sequential batches so that a
+    single request never exceeds MAX_UPLOAD_BATCH_SIZE elements.
+
+    Parameters
+    ----------
+    endpoint
+        The REST endpoint to POST to
+
+    content
+        An array of content elements (e.g. dictionary content or verification items)
+
+    Returns
+    -------
+    data
+        JSON object containing the combined arrays of content returned by the server
+    """
+
+    total = len(content)
+    num_batches = max(1, -(-total // MAX_UPLOAD_BATCH_SIZE))
+    data = []
+
+    for batch_index in range(num_batches):
+        start = batch_index * MAX_UPLOAD_BATCH_SIZE
+        batch = content[start:start + MAX_UPLOAD_BATCH_SIZE]
+
+        if num_batches > 1:
+            logger.info(f"Uploading batch {batch_index + 1} of {num_batches} "
+                        f"(elements {start + 1}-{start + len(batch)} of {total}) to {endpoint}")
+
+        try:
+            res = requests.post(endpoint, headers=_auth_header(),
+                                verify=get_ssl_verify(),
+                                json=batch)
+        except requests.ConnectionError:
+            msg = (f"Failed to communicate with server for {endpoint} "
+                   f"(batch {batch_index + 1} of {num_batches}, "
+                   f"elements {start + 1}-{start + len(batch)} of {total})")
+            logger.error(msg)
+            raise IngeniumLibError(msg)
+
+        if response_handler(res):
+            batch_data = res.json()
+            if num_batches == 1:
+                return batch_data
+            if isinstance(batch_data, list):
+                data.extend(batch_data)
+            else:
+                data.append(batch_data)
+        else:
+            msg = (f"Response not completed successfully to {endpoint} "
+                   f"(batch {batch_index + 1} of {num_batches}, "
+                   f"elements {start + 1}-{start + len(batch)} of {total})")
+            logger.error(msg)
+            raise IngeniumLibError(msg)
+
+    return data
+
+
 def create_dictionary_content(server, flight_sse, content, dictionary_version, dictionary_type):
     """
     Creates dictionary content of a particular type. Note only compatible with V4 of the API
@@ -402,21 +467,7 @@ def create_dictionary_content(server, flight_sse, content, dictionary_version, d
 
     endpoint = f'{server}{dictionary_endpoint}v4/dictionaries/{flight_sse}/versions/{dictionary_version}/{dictionary_type}'
 
-    try:
-        res = requests.post(endpoint, headers=_auth_header(),
-                                      verify=get_ssl_verify(),
-                                      json=content)
-    except requests.ConnectionError:
-        msg = f"Failed to communicate with: {server}"
-        logger.error(msg)
-        raise IngeniumLibError(msg)
-
-    if response_handler(res):
-        data = res.json()
-    else:
-        msg = f"Response not completed successfully to {endpoint}"
-        logger.error(msg)
-        raise IngeniumLibError(msg)
+    data = _post_content_in_batches(endpoint, content)
 
     return data
 
@@ -663,21 +714,7 @@ def create_vnv_vis(server, content):
 
     endpoint = f'{server}{dictionary_endpoint}v4/vnv/vis'
 
-    try:
-        res = requests.post(endpoint, headers=_auth_header(),
-                                      verify=get_ssl_verify(),
-                                      json=content)
-    except requests.ConnectionError:
-        msg = f"Failed to communicate with: {server}"
-        logger.error(msg)
-        raise IngeniumLibError(msg)
-
-    if response_handler(res):
-        data = res.json()
-    else:
-        msg = f"Response not completed successfully to {endpoint}"
-        logger.error(msg)
-        raise IngeniumLibError(msg)
+    data = _post_content_in_batches(endpoint, content)
 
     return data
 
