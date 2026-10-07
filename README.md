@@ -34,8 +34,12 @@ The repository is organized as follows:
 
 Reference steps and schemas live in [ingenium-ref](https://github.com/OpenIngenium/ingenium-ref):
 
--   `docs/custom_script_schema.rnc`: RELAX NG Compact schema for custom script XML, the format read by `ProjConfigCreateUpdateCS.py` and `ProjConfigPalette.py`.
+-   `docs/custom_script_schema.rnc`: RELAX NG Compact schema for custom script XML, the format read by `ProjConfigCreateUpdateCS.py`.
 -   `steps/reference/`: Example steps built on `ing_lib`, each with sample input/output JSON and a `custom_script.xml`.
+
+API and JSON formats live in [dict-service](https://github.com/OpenIngenium/dict-service):
+
+-   `openapi.yaml`: OpenAPI specification for the dictionary service API. (which includes the JSON schemas)
 
 ## Installation
 
