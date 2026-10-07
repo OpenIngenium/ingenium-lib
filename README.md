@@ -26,12 +26,16 @@ The repository is organized as follows:
     -   `utils/`: Standalone utility scripts.
         -   `ProjConfigV3toV4Convert.py`: Converts verification item (VI) JSON data from API v3 format to v4 format.
     -   `tests/`: Pytest test suite, including unit and integration tests for the library and all applications.
--   `reference/`: Reference schemas and definitions.
-    -   `custom_script_schema.rnc`: RELAX NG Compact schema for custom script XML.
--   `steps/reference_step/`: Example step with sample input/output JSON, `custom_script.xml`, images, and a reference `reference_step.py`.
 -   `setup.py`: Installation configuration for the `ing_lib` package.
 -   `requirements.txt`: Python package dependencies.
 -   `LICENSE`: Apache 2.0 license.
+
+## Related repositories
+
+Reference steps and schemas live in [ingenium-ref](https://github.com/OpenIngenium/ingenium-ref):
+
+-   `docs/custom_script_schema.rnc`: RELAX NG Compact schema for custom script XML, the format read by `ProjConfigCreateUpdateCS.py` and `ProjConfigPalette.py`.
+-   `steps/reference/`: Example steps built on `ing_lib`, each with sample input/output JSON and a `custom_script.xml`.
 
 ## Installation
 
