@@ -10,7 +10,7 @@ Libraries and scripts to interact with and support [Ingenium](https://github.com
 The repository is organized as follows:
 
 -   `ing_lib/`: The main Python package.
-    -   `__init__.py`: Package initializer and version (`0.1.0`) accessor.
+    -   `__init__.py`: Package initializer and version accessor.
     -   `common.py`: Shared utility functions, REST helpers, authentication handling, Ingenium API endpoint constants, and the `IngeniumLibError` exception.
     -   `logs.py`: Logging configuration using `RichHandler` for console output.
     -   `project_config.py`: Core library for querying and managing Ingenium Project Configurations, including command/telemetry dictionaries, V&V information, and custom scripts.
