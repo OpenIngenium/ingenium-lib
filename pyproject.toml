@@ -14,7 +14,7 @@ authors = [
 ]
 keywords = ["ingenium", "open-ingenium"]
 dependencies = [
-    "rich>=14.0.0",
+    "rich>=15.0.0",
     "requests>=2.34.2",
     "PyJWT>=2.13.0",
     "openpyxl>=3.1.5",
