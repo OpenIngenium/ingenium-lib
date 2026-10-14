@@ -26,7 +26,7 @@ The repository is organized as follows:
     -   `utils/`: Standalone utility scripts.
         -   `ProjConfigV3toV4Convert.py`: Converts verification item (VI) JSON data from API v3 format to v4 format.
     -   `tests/`: Pytest test suite, including unit and integration tests for the library and all applications.
--   `setup.py`: Installation configuration for the `ing_lib` package.
+-   `pyproject.toml`: Packaging configuration for the `ing_lib` package (published on PyPI as `ingenium-lib`).
 -   `requirements.txt`: Python package dependencies.
 -   `LICENSE`: Apache 2.0 license.
 
@@ -43,11 +43,31 @@ API and JSON formats live in [dict-service](https://github.com/OpenIngenium/dict
 
 ## Installation
 
-To install the `ing_lib` package and its runtime/test dependencies, run:
+The package is published on PyPI as `ingenium-lib` (import name `ing_lib`):
+
+```bash
+pip install ingenium-lib
+```
+
+For development, install from the repository root:
 
 ```bash
 pip install -r requirements.txt
 pip install .
 ```
 
-This will install the package and its dependencies (e.g., `rich`). The package requires Python 3.10 or higher.
+The package requires Python 3.10 or higher.
+
+## Command-line tools
+
+Installing the package also installs the following commands:
+
+-   `proj-config-backup`: Back up project configuration content from an Ingenium server.
+-   `proj-config-restore`: Restore project configuration content from a backup file.
+-   `proj-config-clear`: Delete all project configuration information from an Ingenium server.
+-   `proj-config-create-update-cs`: Create or update a custom script on an Ingenium server from XML or JSON input.
+-   `proj-config-load-dict`: Read XML dictionary files (AMPCS or XTCE format) and upload them to an Ingenium server.
+-   `proj-config-palette`: Read/write the Step Palette to an Excel file (query, diff, and update modes).
+-   `proj-config-v3-to-v4-convert`: Convert verification item (VI) JSON data from API v3 format to v4 format.
+
+Run any command with `--help` for usage details.

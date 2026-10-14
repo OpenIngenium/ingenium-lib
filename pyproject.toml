@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ingenium-lib"
+dynamic = ["version"]
+description = "Python libraries supporting OpenIngenium"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [
+    {name = "Christopher Swan", email = "open-ingenium@jpl.nasa.gov"},
+]
+keywords = ["ingenium", "open-ingenium"]
+dependencies = [
+    "rich>=14.0.0",
+    "requests>=2.34.2",
+    "PyJWT>=2.13.0",
+    "openpyxl>=3.1.5",
+    "deepdiff>=9.1.0",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+
+[project.urls]
+Homepage = "https://github.com/OpenIngenium/ingenium-lib"
+Source = "https://github.com/OpenIngenium/ingenium-lib"
+Issues = "https://github.com/OpenIngenium/ingenium-lib/issues"
+
+[project.scripts]
+proj-config-backup = "ing_lib.apps.ProjConfigBackup:main"
+proj-config-restore = "ing_lib.apps.ProjConfigRestore:main"
+proj-config-clear = "ing_lib.apps.ProjConfigClear:main"
+proj-config-create-update-cs = "ing_lib.apps.ProjConfigCreateUpdateCS:main"
+proj-config-load-dict = "ing_lib.apps.ProjConfigLoadDict:main"
+proj-config-palette = "ing_lib.apps.ProjConfigPalette:main"
+proj-config-v3-to-v4-convert = "ing_lib.utils.ProjConfigV3toV4Convert:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "ing_lib.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["ing_lib*"]
+exclude = ["ing_lib.tests*"]
