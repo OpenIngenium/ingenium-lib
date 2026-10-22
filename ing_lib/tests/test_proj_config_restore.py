@@ -140,10 +140,11 @@ class TestProjConfigRestore:
             'custom_scripts': [{'script_name': 'test_script'}]  # Non-empty to trigger error
         }
         
-        with patch('project_config.create_dictionary_version') as mock_create_version, \
-             patch('project_config.create_dictionary_content'), \
-             patch('project_config.create_vnv_vis') as mock_create_vis, \
-             patch('project_config.create_custom_script') as mock_create_script:
+        with patch('apps.ProjConfigRestore.get_dictionary_versions', return_value=[]), \
+             patch('apps.ProjConfigRestore.create_dictionary_version') as mock_create_version, \
+             patch('apps.ProjConfigRestore.create_dictionary_content'), \
+             patch('apps.ProjConfigRestore.create_vnv_vis') as mock_create_vis, \
+             patch('apps.ProjConfigRestore.create_custom_script') as mock_create_script:
             
             # Make some operations fail
             # First version creation succeeds, second fails
