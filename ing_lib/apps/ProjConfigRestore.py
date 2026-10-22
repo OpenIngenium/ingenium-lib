@@ -87,6 +87,11 @@ def restore_dictionaries(server, dictionary_content):
 
     # Restore dictionary versions and content
     for dict_type in ['flight', 'sse']:
+        # Skip dictionary types with no versions to restore (e.g. VI/custom script only restores)
+        if not dictionary_content['versions'][dict_type]:
+            logger.info(f"No {dict_type} dictionary versions to restore - skipping")
+            continue
+
         # Query the versions already on the target server so existing versions can be reused
         try:
             existing_versions = {v.get('dictionary_version') for v in get_dictionary_versions(server, dict_type)}
