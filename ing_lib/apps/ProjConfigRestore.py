@@ -11,7 +11,7 @@ from ing_lib.logs import init_console_logger,get_logger
 init_console_logger()
 
 import ing_lib.common as common
-from ing_lib.project_config import create_dictionary_version,create_dictionary_content,create_custom_script,create_vnv_vis
+from ing_lib.project_config import create_dictionary_version,create_dictionary_content,create_custom_script,create_vnv_vis,get_dictionary_versions,update_dictionary_version
 import argparse
 import getpass
 import urllib3
@@ -87,10 +87,32 @@ def restore_dictionaries(server, dictionary_content):
 
     # Restore dictionary versions and content
     for dict_type in ['flight', 'sse']:
+        # Skip dictionary types with no versions to restore (e.g. VI/custom script only restores)
+        if not dictionary_content['versions'][dict_type]:
+            logger.info(f"No {dict_type} dictionary versions to restore - skipping")
+            continue
+
+        # Query the versions already on the target server so existing versions can be reused
+        try:
+            existing_versions = {v.get('dictionary_version') for v in get_dictionary_versions(server, dict_type)}
+        except Exception as e:
+            msg = f"Could not query existing {dict_type} dictionary versions: {e}. Can not continue - exiting."
+            logger.error(msg)
+            raise common.IngeniumLibError(msg)
+
         for version, content in dictionary_content['versions'][dict_type].items():
             try:
-                logger.info(f"Creating {dict_type} dictionary version: {version}")
-                create_dictionary_version(server, dict_type, content)
+                if version in existing_versions:
+                    logger.info(f"{dict_type} dictionary version {version} already exists - updating metadata and using existing version")
+                    try:
+                        update_dictionary_version(server, dict_type, version,
+                                                  {'dictionary_description': content.get('dictionary_description'),
+                                                   'state': content.get('state')})
+                    except Exception as e:
+                        logger.warning(f"Could not update metadata for {dict_type} dictionary version {version}: {e}")
+                else:
+                    logger.info(f"Creating {dict_type} dictionary version: {version}")
+                    create_dictionary_version(server, dict_type, content)
 
                 for sub_dict in ['cmds', 'evrs', 'channels', 'mil1553']:
                     if sub_dict in dictionary_content[dict_type][version] and len(dictionary_content[dict_type][version][sub_dict]) > 0:
