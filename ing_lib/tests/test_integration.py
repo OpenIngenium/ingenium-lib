@@ -89,21 +89,23 @@ class TestIngLibIntegration:
             assert len(script_data['inputs']) == 1
             assert script_data['inputs'][0]['name'] == 'param1'
 
-    @patch('requests.delete')  
+    @patch('requests.Session.get')
+    @patch('requests.delete')
     @patch('requests.get')
     @pytest.mark.slow
-    def test_error_handling_chain(self, mock_get, mock_delete, comprehensive_server_mock):
+    def test_error_handling_chain(self, mock_get, mock_delete, mock_session_get, comprehensive_server_mock):
         """Test error handling across multiple components."""
         from apps.ProjConfigClear import clear_project_configuration
-        
+
         # Setup mock responses for GET requests (queries)
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.headers = {'x-total-count': '2'}
-        
+
         # Mock responses for dictionary versions query
         mock_response.json.return_value = [{'dictionary_version': 'v1.0'}, {'dictionary_version': 'v1.1'}]
         mock_get.return_value = mock_response
+        mock_session_get.return_value = mock_response
         
         # Setup mock responses for DELETE requests
         mock_delete_response = MagicMock()
