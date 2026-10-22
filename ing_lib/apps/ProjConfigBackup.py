@@ -194,7 +194,11 @@ def get_source_dictionaries(server, api_version, inputs):
                         if sub_dict == 'mil1553':
                             element_name = element.get('mil1553_name')
 
-                        element_details =  get_dictionary_element(server,version.get('dictionary_version'),dict_type,sub_dict,element_name, api_version=api_version)
+                        try:
+                            element_details =  get_dictionary_element(server,version.get('dictionary_version'),dict_type,sub_dict,element_name, api_version=api_version)
+                        except Exception:
+                            logger.warning(f"Could not read {version.get('dictionary_version')} - type:{sub_dict} - element:{element_name}. Skipping", exc_info=True)
+                            continue
                         # Need to refresh the token because this takes awhile
                         common.refresh_auth(server)
                         dictionary_content[dict_type][version.get('dictionary_version')][sub_dict].append(element_details)
