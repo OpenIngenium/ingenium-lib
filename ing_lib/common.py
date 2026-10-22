@@ -13,6 +13,7 @@ import requests
 import json
 import getpass
 import jwt
+import time
 from urllib.parse import urlparse
 
 ##################################################################### Endpoints
@@ -33,7 +34,66 @@ _store = {'token': None,
 _TOKEN_REFRESH_DURATION = 3000
 _TOKEN_DURATION = 3600
 
+# Retry behavior for REST calls (transient connection resets, rate limiting, server hiccups)
+_REQUEST_MAX_ATTEMPTS = 4
+_REQUEST_BACKOFF_SECONDS = 2.0
+_RETRYABLE_STATUS_CODES = (429, 502, 503, 504)
+
 logger = get_logger(__name__)
+
+# Shared session for REST calls (connection keep-alive reduces TLS handshake churn)
+_session = None
+
+
+def _get_session():
+    """
+    Returns a shared requests.Session so connections can be reused (keep-alive)
+    across the many REST calls made by this library.
+    """
+    global _session
+    if _session is None:
+        _session = requests.Session()
+    return _session
+
+
+def _request_with_retry(method, url, **kwargs):
+    """
+    This function performs a REST request with retries on transient failures.
+
+    Retries are performed for connection-level errors (ConnectionError, Timeout) and
+    for retryable HTTP status codes (429, 502, 503, 504) with exponential backoff.
+
+    Parameters
+    ----------
+    method
+        HTTP method name ('get', 'post', 'patch', 'delete')
+
+    url
+        The REST endpoint to hit
+
+    kwargs
+        Arguments passed through to the requests call (headers, verify, params, json, ...)
+
+    Returns
+    -------
+        The response object (final response is returned after retries are exhausted)
+    """
+    for attempt in range(1, _REQUEST_MAX_ATTEMPTS + 1):
+        try:
+            response = getattr(_get_session(), method)(url, **kwargs)
+        except (requests.ConnectionError, requests.Timeout) as err:
+            if attempt == _REQUEST_MAX_ATTEMPTS:
+                raise
+            reason = repr(err)
+        else:
+            if response.status_code not in _RETRYABLE_STATUS_CODES or attempt == _REQUEST_MAX_ATTEMPTS:
+                return response
+            reason = f"status {response.status_code}"
+
+        delay = _REQUEST_BACKOFF_SECONDS * (2 ** (attempt - 1))
+        logger.warning(f"{method.upper()} {url} failed ({reason}); "
+                       f"retrying in {delay}s (attempt {attempt}/{_REQUEST_MAX_ATTEMPTS})")
+        time.sleep(delay)
 
 
 class IngeniumLibError(Exception):
@@ -102,7 +162,7 @@ def ingenium_rest_get(endpoint, query_params={}):
 
     data = None
 
-    data_req = requests.get(endpoint, headers=_auth_header(), verify=get_ssl_verify(), params=query_params)
+    data_req = _request_with_retry('get', endpoint, headers=_auth_header(), verify=get_ssl_verify(), params=query_params)
 
     if response_handler(data_req):
         data = data_req.json()
@@ -150,7 +210,7 @@ def ingenium_rest_get_paginated(endpoint, query_params={}):
         query_params['limit'] = limit
         query_params['offset'] = offset
 
-        data_req = requests.get(endpoint, headers=_auth_header(), verify=get_ssl_verify(), params=query_params)
+        data_req = _request_with_retry('get', endpoint, headers=_auth_header(), verify=get_ssl_verify(), params=query_params)
 
         if response_handler(data_req):
             data = data_req.json()
@@ -314,8 +374,9 @@ def authenticate(server, username=None, password=None, force=False, rsa=False):
     try:
         msg = f"Executing REST API Call to endpoint: {server}{auth_endpoint}"
         logger.debug(msg)
-        logon = requests.get(server + auth_endpoint, auth=requests.auth.HTTPBasicAuth(username, password),
-                             verify=get_ssl_verify(), headers=headers)
+        logon = _request_with_retry('get', server + auth_endpoint,
+                                    auth=requests.auth.HTTPBasicAuth(username, password),
+                                    verify=get_ssl_verify(), headers=headers)
     except requests.ConnectionError as err:
         msg = f"Failed to communicate with: {server}."
         logger.error(msg)
@@ -367,7 +428,7 @@ def refresh_auth(server, force=False):
         }
 
         try:
-            refresh = requests.post(server + refresh_endpoint, headers=renew_header, verify=get_ssl_verify())
+            refresh = _request_with_retry('post', server + refresh_endpoint, headers=renew_header, verify=get_ssl_verify())
         except requests.ConnectionError as err:
             msg = f"Failed to communicate with: {server}."
             logger.error(msg)

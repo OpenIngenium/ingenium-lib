@@ -44,6 +44,10 @@ proj-config-create-update-cs = "ing_lib.apps.ProjConfigCreateUpdateCS:main"
 proj-config-load-dict = "ing_lib.apps.ProjConfigLoadDict:main"
 proj-config-palette = "ing_lib.apps.ProjConfigPalette:main"
 proj-config-v3-to-v4-convert = "ing_lib.utils.ProjConfigV3toV4Convert:main"
+migrate-procedures = "ing_lib.apps.MigrateProcedures:main"
+migrate-executions = "ing_lib.apps.MigrateExecutions:main"
+procedure-report = "ing_lib.apps.ProcedureReport:main"
+vnv-report = "ing_lib.apps.VnVReport:main"
 
 [tool.setuptools.dynamic]
 version = {attr = "ing_lib.__version__"}
