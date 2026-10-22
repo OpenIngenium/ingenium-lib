@@ -390,8 +390,8 @@ class TestProjConfigRestore:
             mock_create_version.assert_not_called()
             mock_create_content.assert_called_once()
 
-    def test_restore_version_query_failure_falls_back(self, caplog):
-        """Test that a failure querying existing versions falls back to creating them."""
+    def test_restore_version_query_failure_raises(self, caplog):
+        """Test that a failure querying existing versions aborts the restore."""
         backup_data = {
             'versions': {
                 'flight': {
@@ -422,9 +422,10 @@ class TestProjConfigRestore:
              patch('apps.ProjConfigRestore.update_dictionary_version') as mock_update_version, \
              patch('apps.ProjConfigRestore.create_dictionary_content') as mock_create_content:
 
-            restore_dictionaries('https://test-server.example.com', backup_data)
+            with pytest.raises(common.IngeniumLibError):
+                restore_dictionaries('https://test-server.example.com', backup_data)
 
-            mock_create_version.assert_called_once()
+            mock_create_version.assert_not_called()
             mock_update_version.assert_not_called()
-            mock_create_content.assert_called_once()
+            mock_create_content.assert_not_called()
             assert "Could not query existing" in caplog.text

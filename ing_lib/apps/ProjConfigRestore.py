@@ -91,8 +91,9 @@ def restore_dictionaries(server, dictionary_content):
         try:
             existing_versions = {v.get('dictionary_version') for v in get_dictionary_versions(server, dict_type)}
         except Exception as e:
-            logger.warning(f"Could not query existing {dict_type} dictionary versions: {e}. Versions will be created if needed.")
-            existing_versions = set()
+            msg = f"Could not query existing {dict_type} dictionary versions: {e}. Can not continue - exiting."
+            logger.error(msg)
+            raise common.IngeniumLibError(msg)
 
         for version, content in dictionary_content['versions'][dict_type].items():
             try:
