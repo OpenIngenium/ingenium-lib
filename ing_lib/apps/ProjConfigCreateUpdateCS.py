@@ -48,7 +48,7 @@ Usage Examples:
     python CreateUpdateCustomScript.py https://ingenium.project.jpl.nasa.gov /path/to/my_script.xml --base_path /opt/scripts --debug
 
 Authors:
-    * Chris Swan (christopher.a.swan@jpl.nasa.gov)
+    * Chris Swan (open-ingenium@jpl.nasa.gov)
 """
 
 ##################################################### Imports ######################################################

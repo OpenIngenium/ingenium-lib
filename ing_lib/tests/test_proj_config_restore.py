@@ -140,10 +140,11 @@ class TestProjConfigRestore:
             'custom_scripts': [{'script_name': 'test_script'}]  # Non-empty to trigger error
         }
         
-        with patch('project_config.create_dictionary_version') as mock_create_version, \
-             patch('project_config.create_dictionary_content'), \
-             patch('project_config.create_vnv_vis') as mock_create_vis, \
-             patch('project_config.create_custom_script') as mock_create_script:
+        with patch('apps.ProjConfigRestore.get_dictionary_versions', return_value=[]), \
+             patch('apps.ProjConfigRestore.create_dictionary_version') as mock_create_version, \
+             patch('apps.ProjConfigRestore.create_dictionary_content'), \
+             patch('apps.ProjConfigRestore.create_vnv_vis') as mock_create_vis, \
+             patch('apps.ProjConfigRestore.create_custom_script') as mock_create_script:
             
             # Make some operations fail
             # First version creation succeeds, second fails
@@ -251,4 +252,181 @@ class TestProjConfigRestore:
         }
         
         # Should handle missing keys gracefully
-        restore_dictionaries('https://test-server.example.com', incomplete_data) 
+        restore_dictionaries('https://test-server.example.com', incomplete_data)
+
+    def test_restore_existing_version_uses_it(self, comprehensive_server_mock):
+        """Test that an existing version is updated and reused instead of created."""
+        backup_data = {
+            'versions': {
+                'flight': {
+                    'v1.0': {
+                        'dictionary_description': 'Test Flight Dict',
+                        'dictionary_version': 'v1.0',
+                        'state': 'PUBLISHED'
+                    }
+                },
+                'sse': {}
+            },
+            'flight': {
+                'v1.0': {
+                    'cmds': [{'command_stem': 'TEST_CMD'}],
+                    'channels': [],
+                    'evrs': [],
+                    'mil1553': []
+                }
+            },
+            'sse': {},
+            'vis': [],
+            'custom_scripts': []
+        }
+
+        with patch('apps.ProjConfigRestore.get_dictionary_versions',
+                   return_value=[{'dictionary_version': 'v1.0'}]), \
+             patch('apps.ProjConfigRestore.create_dictionary_version') as mock_create_version, \
+             patch('apps.ProjConfigRestore.update_dictionary_version') as mock_update_version, \
+             patch('apps.ProjConfigRestore.create_dictionary_content') as mock_create_content:
+
+            restore_dictionaries('https://test-server.example.com', backup_data)
+
+            mock_create_version.assert_not_called()
+            mock_update_version.assert_called_once_with(
+                'https://test-server.example.com', 'flight', 'v1.0',
+                {'dictionary_description': 'Test Flight Dict', 'state': 'PUBLISHED'})
+            mock_create_content.assert_called_once_with(
+                'https://test-server.example.com', 'flight',
+                [{'command_stem': 'TEST_CMD'}], 'v1.0', 'cmds')
+
+    def test_restore_mixed_existing_and_new_versions(self, comprehensive_server_mock):
+        """Test restore with one existing and one new version."""
+        backup_data = {
+            'versions': {
+                'flight': {
+                    'v1.0': {
+                        'dictionary_description': 'Existing Dict',
+                        'dictionary_version': 'v1.0',
+                        'state': 'PUBLISHED'
+                    },
+                    'v2.0': {
+                        'dictionary_description': 'New Dict',
+                        'dictionary_version': 'v2.0',
+                        'state': 'NOT_PUBLISHED'
+                    }
+                },
+                'sse': {}
+            },
+            'flight': {
+                'v1.0': {
+                    'cmds': [{'command_stem': 'EXISTING_CMD'}],
+                    'channels': [],
+                    'evrs': [],
+                    'mil1553': []
+                },
+                'v2.0': {
+                    'cmds': [{'command_stem': 'NEW_CMD'}],
+                    'channels': [],
+                    'evrs': [],
+                    'mil1553': []
+                }
+            },
+            'sse': {},
+            'vis': [],
+            'custom_scripts': []
+        }
+
+        with patch('apps.ProjConfigRestore.get_dictionary_versions',
+                   return_value=[{'dictionary_version': 'v1.0'}]), \
+             patch('apps.ProjConfigRestore.create_dictionary_version') as mock_create_version, \
+             patch('apps.ProjConfigRestore.update_dictionary_version') as mock_update_version, \
+             patch('apps.ProjConfigRestore.create_dictionary_content') as mock_create_content:
+
+            restore_dictionaries('https://test-server.example.com', backup_data)
+
+            # Only the new version is created
+            mock_create_version.assert_called_once_with(
+                'https://test-server.example.com', 'flight',
+                {'dictionary_description': 'New Dict', 'dictionary_version': 'v2.0',
+                 'state': 'NOT_PUBLISHED'})
+            # Only the existing version is updated
+            mock_update_version.assert_called_once_with(
+                'https://test-server.example.com', 'flight', 'v1.0',
+                {'dictionary_description': 'Existing Dict', 'state': 'PUBLISHED'})
+            # Content uploaded for both versions
+            assert mock_create_content.call_count == 2
+
+    def test_restore_metadata_update_failure_still_uploads(self, comprehensive_server_mock):
+        """Test that a metadata update failure on an existing version does not block content upload."""
+        backup_data = {
+            'versions': {
+                'flight': {
+                    'v1.0': {
+                        'dictionary_description': 'Test Flight Dict',
+                        'dictionary_version': 'v1.0',
+                        'state': 'PUBLISHED'
+                    }
+                },
+                'sse': {}
+            },
+            'flight': {
+                'v1.0': {
+                    'cmds': [{'command_stem': 'TEST_CMD'}],
+                    'channels': [],
+                    'evrs': [],
+                    'mil1553': []
+                }
+            },
+            'sse': {},
+            'vis': [],
+            'custom_scripts': []
+        }
+
+        with patch('apps.ProjConfigRestore.get_dictionary_versions',
+                   return_value=[{'dictionary_version': 'v1.0'}]), \
+             patch('apps.ProjConfigRestore.create_dictionary_version') as mock_create_version, \
+             patch('apps.ProjConfigRestore.update_dictionary_version',
+                   side_effect=Exception("Update failed")), \
+             patch('apps.ProjConfigRestore.create_dictionary_content') as mock_create_content:
+
+            restore_dictionaries('https://test-server.example.com', backup_data)
+
+            mock_create_version.assert_not_called()
+            mock_create_content.assert_called_once()
+
+    def test_restore_version_query_failure_raises(self, caplog):
+        """Test that a failure querying existing versions aborts the restore."""
+        backup_data = {
+            'versions': {
+                'flight': {
+                    'v1.0': {
+                        'dictionary_description': 'Test Flight Dict',
+                        'dictionary_version': 'v1.0',
+                        'state': 'PUBLISHED'
+                    }
+                },
+                'sse': {}
+            },
+            'flight': {
+                'v1.0': {
+                    'cmds': [{'command_stem': 'TEST_CMD'}],
+                    'channels': [],
+                    'evrs': [],
+                    'mil1553': []
+                }
+            },
+            'sse': {},
+            'vis': [],
+            'custom_scripts': []
+        }
+
+        with patch('apps.ProjConfigRestore.get_dictionary_versions',
+                   side_effect=Exception("Query failed")), \
+             patch('apps.ProjConfigRestore.create_dictionary_version') as mock_create_version, \
+             patch('apps.ProjConfigRestore.update_dictionary_version') as mock_update_version, \
+             patch('apps.ProjConfigRestore.create_dictionary_content') as mock_create_content:
+
+            with pytest.raises(common.IngeniumLibError):
+                restore_dictionaries('https://test-server.example.com', backup_data)
+
+            mock_create_version.assert_not_called()
+            mock_update_version.assert_not_called()
+            mock_create_content.assert_not_called()
+            assert "Could not query existing" in caplog.text

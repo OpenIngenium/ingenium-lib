@@ -120,7 +120,11 @@ def mock_http_requests():
          patch('requests.get', return_value=mock_response), \
          patch('requests.post', return_value=mock_response), \
          patch('requests.patch', return_value=mock_response), \
-         patch('requests.delete', return_value=mock_response):
+         patch('requests.delete', return_value=mock_response), \
+         patch('requests.Session.get', return_value=mock_response), \
+         patch('requests.Session.post', return_value=mock_response), \
+         patch('requests.Session.patch', return_value=mock_response), \
+         patch('requests.Session.delete', return_value=mock_response):
         yield
 
 @pytest.fixture
@@ -231,6 +235,10 @@ def mock_empty_server():
         stack.enter_context(patch('requests.post'))
         stack.enter_context(patch('requests.patch'))
         stack.enter_context(patch('requests.delete'))
+        stack.enter_context(patch('requests.Session.get'))
+        stack.enter_context(patch('requests.Session.post'))
+        stack.enter_context(patch('requests.Session.patch'))
+        stack.enter_context(patch('requests.Session.delete'))
         
         yield
 

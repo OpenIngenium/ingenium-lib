@@ -84,7 +84,7 @@ class TestCommon:
         result = common.response_handler(mock_response)
         assert result is False
 
-    @patch('requests.get')
+    @patch('requests.Session.get')
 
     def test_ingenium_rest_get_success(self, mock_get):
         """Test successful ingenium_rest_get call."""
@@ -109,7 +109,7 @@ class TestCommon:
             params={}
         )
 
-    @patch('requests.get')
+    @patch('requests.Session.get')
     def test_ingenium_rest_get_failure(self, mock_get):
         """Test failed ingenium_rest_get call should raise IngeniumLibError."""
         # Mock failed response
@@ -150,7 +150,7 @@ class TestCommon:
         assert common.ssl_verify is True
         assert common.refresh_time is None
 
-    @patch('requests.get')
+    @patch('requests.Session.get')
     def test_ingenium_rest_get_with_ssl_disabled(self, mock_get):
         """Test ingenium_rest_get with SSL verification disabled."""
         mock_response = MagicMock()
@@ -172,17 +172,75 @@ class TestCommon:
             params={}
         )
 
-    @patch('requests.get')
-    def test_ingenium_rest_get_connection_error(self, mock_get):
+    @patch('time.sleep')
+    @patch('requests.Session.get')
+    def test_ingenium_rest_get_connection_error(self, mock_get, mock_sleep):
         """Test ingenium_rest_get with connection error."""
         mock_get.side_effect = requests.ConnectionError("Connection failed")
-        
+
         common.set_token("test_token")
         common.set_refresh_time(datetime.datetime.now(datetime.timezone.utc))
-        
-        # Should raise the ConnectionError, not handle it gracefully
+
+        # Should retry, then raise the ConnectionError
         with pytest.raises(requests.ConnectionError):
             common.ingenium_rest_get(MOCK_API_ENDPOINT)
+
+        assert mock_get.call_count == common._REQUEST_MAX_ATTEMPTS
+
+    @patch('time.sleep')
+    @patch('requests.Session.get')
+    def test_ingenium_rest_get_retry_then_success(self, mock_get, mock_sleep):
+        """Test ingenium_rest_get retries on connection error and succeeds."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"data": "recovered"}
+        mock_get.side_effect = [requests.ConnectionError("reset"), mock_response]
+
+        common.set_token("test_token")
+        common.set_refresh_time(datetime.datetime.now(datetime.timezone.utc))
+        common.set_ssl_verify(True)
+
+        result = common.ingenium_rest_get(MOCK_API_ENDPOINT)
+
+        assert result == {"data": "recovered"}
+        assert mock_get.call_count == 2
+
+    @patch('time.sleep')
+    @patch('requests.Session.get')
+    def test_ingenium_rest_get_retryable_status(self, mock_get, mock_sleep):
+        """Test retryable status codes are retried before failing."""
+        mock_response = MagicMock()
+        mock_response.status_code = 503
+        mock_response.url = MOCK_API_ENDPOINT
+        mock_response.request.method = "GET"
+        mock_response.text = "Service Unavailable"
+        mock_get.return_value = mock_response
+
+        common.set_token("test_token")
+        common.set_refresh_time(datetime.datetime.now(datetime.timezone.utc))
+
+        with pytest.raises(common.IngeniumLibError):
+            common.ingenium_rest_get(MOCK_API_ENDPOINT)
+
+        assert mock_get.call_count == common._REQUEST_MAX_ATTEMPTS
+
+    @patch('requests.Session.get')
+    def test_ingenium_rest_get_non_retryable_status_not_retried(self, mock_get):
+        """Test non-retryable status codes are not retried."""
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_response.url = MOCK_API_ENDPOINT
+        mock_response.request.method = "GET"
+        mock_response.text = "Not Found"
+        mock_get.return_value = mock_response
+
+        common.set_token("test_token")
+        common.set_refresh_time(datetime.datetime.now(datetime.timezone.utc))
+
+        with pytest.raises(common.IngeniumLibError):
+            common.ingenium_rest_get(MOCK_API_ENDPOINT)
+
+        mock_get.assert_called_once()
 
     def test_endpoints_format(self):
         """Test that endpoint strings are properly formatted."""
@@ -192,7 +250,7 @@ class TestCommon:
         assert common.dictionary_endpoint.startswith("/")
         assert common.dictionary_endpoint.endswith("/")
 
-    @patch('requests.get')
+    @patch('requests.Session.get')
     def test_ingenium_rest_get_json_decode_error(self, mock_get):
         """Test ingenium_rest_get with JSON decode error."""
         mock_response = MagicMock()
@@ -230,7 +288,7 @@ class TestCommon:
         common.token = None
         assert common.token is None
 
-    @patch('requests.get')
+    @patch('requests.Session.get')
     def test_ingenium_rest_get_paginated_success(self, mock_get):
         """Test successful ingenium_rest_get_paginated call."""
         # Mock successful response with pagination headers
@@ -255,7 +313,7 @@ class TestCommon:
         assert call_args.kwargs['params']['limit'] == 1000
         assert call_args.kwargs['params']['offset'] == 0
 
-    @patch('requests.get')
+    @patch('requests.Session.get')
     def test_authenticate_success(self, mock_get):
         """Test successful authenticate call."""
         # Mock successful authentication response
@@ -277,7 +335,7 @@ class TestCommon:
         mock_get.assert_called_once()
         assert mock_get.call_args[0][0] == expected_url
 
-    @patch('requests.post')
+    @patch('requests.Session.post')
     def test_refresh_auth_success(self, mock_post):
         """Test successful refresh_auth call."""
         # Mock successful refresh response
