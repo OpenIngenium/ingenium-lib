@@ -8,7 +8,7 @@ These tests verify that the applications work together correctly in realistic sc
 4. AMPCS Dictionary load → Backup workflow
 
 Authors:
-    * Chris Swan (christopher.a.swan@jpl.nasa.gov)
+    * Chris Swan (open-ingenium@jpl.nasa.gov)
 """
 
 import pytest

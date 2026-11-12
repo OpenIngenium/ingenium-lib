@@ -2,7 +2,7 @@
 This script migrates the procedures from one ingenium instance to another (via api).
 
 Authors:
-    * Chris Swan (christopher.a.swan@jpl.nasa.gov)
+    * Chris Swan (open-ingenium@jpl.nasa.gov)
 """
 
 ##################################################### Imports ######################################################

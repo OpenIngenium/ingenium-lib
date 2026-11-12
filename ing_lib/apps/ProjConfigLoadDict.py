@@ -24,7 +24,7 @@ Usage Examples:
     python ProjConfigLoadDict.py https://ingenium.project.jpl.nasa.gov my_dict_v1.0 flight --format ampcs cmd_dict.xml --debug --rsa
 
 Authors:
-    * Chris Swan (christopher.a.swan@jpl.nasa.gov)
+    * Chris Swan (open-ingenium@jpl.nasa.gov)
 """
 
 ##################################################### Imports ######################################################

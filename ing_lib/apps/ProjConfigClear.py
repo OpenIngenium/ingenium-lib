@@ -2,7 +2,7 @@
 This script deletes all project configuration information from an Ingenium server.
 
 Authors:
-    * Chris Swan (christopher.a.swan@jpl.nasa.gov)
+    * Chris Swan (open-ingenium@jpl.nasa.gov)
 """
 
 ##################################################### Imports ######################################################

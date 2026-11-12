@@ -2,7 +2,7 @@
 This script restores project configuration content from a backup file to an Ingenium server.
 
 Authors:
-    * Chris Swan (christopher.a.swan@jpl.nasa.gov)
+    * Chris Swan (open-ingenium@jpl.nasa.gov)
 """
 
 ##################################################### Imports ######################################################
