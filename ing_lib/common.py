@@ -13,6 +13,7 @@ import requests
 import json
 import getpass
 import jwt
+import os
 import time
 from urllib.parse import urlparse
 
@@ -498,3 +499,45 @@ def set_refresh_time(value):
 def set_ssl_verify(value):
     """Set the ssl verify value."""
     _store['ssl_verify'] = value
+
+
+def debug_output(file_name, json_data):
+    """
+    This function writes JSON data to a file (used for debug output)
+
+    Parameters
+    ----------
+    file_name: str
+        Output file name for debug dump
+
+    json_data
+        JSON structure to write
+
+    Returns
+    -------
+        None
+    """
+
+    with open(file_name, 'w') as outfile:
+        json.dump(json_data, outfile, indent=4)
+
+
+def get_debug_file_path(output_path, postfix):
+    """
+    This function builds a debug file path based on an output file path.
+
+    Parameters
+    ----------
+    output_path: str
+        The base output file path
+
+    postfix: str
+        The postfix to append to the file stem (e.g. '_execution_data.json')
+
+    Returns
+    -------
+        The debug file path
+    """
+    dir_name = os.path.dirname(output_path)
+    file_stem = os.path.splitext(os.path.basename(output_path))[0]
+    return os.path.join(dir_name, file_stem + postfix)

@@ -461,3 +461,103 @@ class TestProjectConfig:
                 project_config.create_vnv_vis(
                     'https://test-server.example.com', [{'vi_id': 'VI_0'}]
                 )
+
+class TestGetDictLookups:
+    """Test class for get_dict_* single element lookup functions."""
+
+    @patch('project_config.get_vnv_vis')
+    def test_get_dict_vi_exact_match(self, mock_vis):
+        """get_dict_vi returns the exact vi_id match from a broader query result."""
+        mock_vis.return_value = [{'vi_id': '123'}, {'vi_id': '1234'}]
+
+        result = project_config.get_dict_vi('https://test-server.example.com', '123')
+
+        assert result == {'vi_id': '123'}
+        mock_vis.assert_called_once_with('https://test-server.example.com',
+                                         query={'vi_id': '123'}, api_version='v3')
+
+    @patch('project_config.get_vnv_vis')
+    def test_get_dict_vi_not_found(self, mock_vis):
+        mock_vis.return_value = [{'vi_id': '1234'}]
+        assert project_config.get_dict_vi('https://test-server.example.com', '123') is None
+
+    @patch('project_config.get_dictionary')
+    def test_get_dict_eha_by_channel_id(self, mock_dict):
+        mock_dict.return_value = [{'channel_id': 'A-0001', 'channel_name': 'CHAN_A'},
+                                  {'channel_id': 'A-0002', 'channel_name': 'CHAN_B'}]
+
+        result = project_config.get_dict_eha('https://test-server.example.com', 'flight',
+                                             'v1', channel_id='A-0002')
+
+        assert result['channel_name'] == 'CHAN_B'
+        mock_dict.assert_called_once_with('https://test-server.example.com', 'v1', 'flight',
+                                          'channels', query={'channel_id': 'A-0002'},
+                                          api_version='v3')
+
+    @patch('project_config.get_dictionary')
+    def test_get_dict_eha_by_name(self, mock_dict):
+        mock_dict.return_value = [{'channel_id': 'A-0001', 'channel_name': 'CHAN_A'}]
+        result = project_config.get_dict_eha('https://test-server.example.com', 'sse',
+                                             'v2', eha_name='CHAN_A')
+        assert result['channel_id'] == 'A-0001'
+
+    @patch('project_config.get_dictionary')
+    def test_get_dict_eha_not_found(self, mock_dict):
+        mock_dict.return_value = [{'channel_id': 'A-0001', 'channel_name': 'CHAN_A'}]
+        assert project_config.get_dict_eha('https://test-server.example.com', 'flight',
+                                           'v1', channel_id='ZZZZ') is None
+
+    @patch('project_config.get_dictionary')
+    def test_get_dict_evr_exact_match(self, mock_dict):
+        mock_dict.return_value = [{'evr_id': '10', 'evr_name': 'EVR_X'},
+                                  {'evr_id': '100', 'evr_name': 'EVR_XY'}]
+        result = project_config.get_dict_evr('https://test-server.example.com', 'flight',
+                                             'v1', evr_id='10')
+        assert result == {'evr_id': '10', 'evr_name': 'EVR_X'}
+
+    @patch('project_config.get_dictionary')
+    def test_get_dict_evr_by_name(self, mock_dict):
+        mock_dict.return_value = [{'evr_id': '10', 'evr_name': 'EVR_X'}]
+        result = project_config.get_dict_evr('https://test-server.example.com', 'flight',
+                                             'v1', evr_name='EVR_X')
+        assert result['evr_id'] == '10'
+
+    @patch('project_config.get_dictionary')
+    def test_get_dict_command_exact_match(self, mock_dict):
+        mock_dict.return_value = [{'command_stem': 'CMD_A'}, {'command_stem': 'CMD_AB'}]
+        result = project_config.get_dict_command('https://test-server.example.com', 'flight',
+                                                 'v1', 'CMD_A')
+        assert result == {'command_stem': 'CMD_A'}
+        mock_dict.assert_called_once_with('https://test-server.example.com', 'v1', 'flight',
+                                          'cmds', query={'command_stem': 'CMD_A'},
+                                          api_version='v3')
+
+    @patch('project_config.get_dictionary')
+    def test_get_dict_command_not_found(self, mock_dict):
+        mock_dict.return_value = [{'command_stem': 'CMD_AB'}]
+        assert project_config.get_dict_command('https://test-server.example.com', 'flight',
+                                               'v1', 'CMD_A') is None
+
+    @patch('requests.get')
+    def test_get_dict_1553_var_exact_match(self, mock_get):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [{'mil1553_name': 'VAR_A'}, {'mil1553_name': 'VAR_AB'}]
+        mock_get.return_value = mock_response
+
+        result = project_config.get_dict_1553_var('https://test-server.example.com', 'VAR_A')
+
+        assert result == {'mil1553_name': 'VAR_A'}
+        mock_get.assert_called_once()
+
+    @patch('requests.get')
+    def test_get_dict_1553_var_http_error(self, mock_get):
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_response.url = 'x'
+        mock_response.request.method = 'GET'
+        mock_response.text = 'err'
+        mock_get.return_value = mock_response
+
+        with pytest.raises(project_config.IngeniumLibError):
+            project_config.get_dict_1553_var('https://test-server.example.com', 'VAR_A')
