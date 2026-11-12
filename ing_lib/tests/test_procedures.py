@@ -238,3 +238,92 @@ class TestImportProcedureVersions:
             procedures.import_procedure_versions(MOCK_BASE_URL, str(in_file))
 
         assert "Response not completed successfully" in str(exc_info.value)
+
+
+class TestGetIngeniumProcedure:
+    """Test class for get_ingenium_procedure (info + version elements)."""
+
+    @patch('procedures.ingenium_rest_get_paginated')
+    @patch('procedures.ingenium_rest_get')
+    def test_get_procedure_success(self, mock_get, mock_paginated):
+        mock_get.return_value = {'procedure_id': MOCK_PROCEDURE_ID}
+        mock_paginated.return_value = [{'elem_id': 'e1'}]
+
+        info, elements = procedures.get_ingenium_procedure(MOCK_BASE_URL, MOCK_PROCEDURE_ID, '2')
+
+        assert info['procedure_id'] == MOCK_PROCEDURE_ID
+        assert elements == [{'elem_id': 'e1'}]
+        mock_get.assert_called_once_with(
+            f"{MOCK_BASE_URL}{common.procedure_endpoint}/{MOCK_PROCEDURE_ID}")
+        mock_paginated.assert_called_once_with(
+            f"{MOCK_BASE_URL}{common.procedure_endpoint}/{MOCK_PROCEDURE_ID}/versions/2/elements/")
+
+
+class TestGetProcedureVersionInfo:
+    """Test class for get_procedure_version_info."""
+
+    @patch('procedures.ingenium_rest_get')
+    def test_get_version_info_success(self, mock_get):
+        mock_get.return_value = {'version': 2, 'status': 'RELEASED'}
+
+        result = procedures.get_procedure_version_info(MOCK_BASE_URL, MOCK_PROCEDURE_ID, '2')
+
+        assert result['version'] == 2
+        mock_get.assert_called_once_with(
+            f"{MOCK_BASE_URL}{common.procedure_endpoint}/{MOCK_PROCEDURE_ID}/versions/2")
+
+
+class TestUpdateProcedureVersionStatus:
+    """Test class for update_procedure_version_status."""
+
+    @patch('requests.post')
+    def test_update_status_success(self, mock_post):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {'status': 'RELEASED'}
+        mock_post.return_value = mock_response
+
+        result = procedures.update_procedure_version_status(MOCK_BASE_URL, MOCK_PROCEDURE_ID, 2, 'RELEASE')
+
+        assert result['status'] == 'RELEASED'
+        mock_post.assert_called_once_with(
+            f"{MOCK_BASE_URL}{common.procedure_endpoint}/{MOCK_PROCEDURE_ID}/versions/2/status",
+            headers={'Authorization': 'test_token'}, verify=True, json={'action': 'RELEASE'})
+
+    @patch('requests.post')
+    def test_update_status_connection_error(self, mock_post):
+        mock_post.side_effect = requests.ConnectionError("fail")
+        with pytest.raises(common.IngeniumLibError) as exc_info:
+            procedures.update_procedure_version_status(MOCK_BASE_URL, MOCK_PROCEDURE_ID, 2, 'RELEASE')
+        assert "Failed to communicate" in str(exc_info.value)
+
+
+class TestUpdateProcedureVersionReleaseId:
+    """Test class for update_procedure_version_release_id."""
+
+    @patch('requests.patch')
+    def test_update_release_id_success(self, mock_patch):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {'institutional_release_id': 'RevB'}
+        mock_patch.return_value = mock_response
+
+        result = procedures.update_procedure_version_release_id(MOCK_BASE_URL, MOCK_PROCEDURE_ID, 2, 'RevB')
+
+        assert result['institutional_release_id'] == 'RevB'
+        mock_patch.assert_called_once_with(
+            f"{MOCK_BASE_URL}{common.procedure_endpoint}/{MOCK_PROCEDURE_ID}/versions/2",
+            headers={'Authorization': 'test_token'}, verify=True,
+            json={'institutional_release_id': 'RevB'})
+
+    @patch('requests.patch')
+    def test_update_release_id_http_error(self, mock_patch):
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_response.url = 'x'
+        mock_response.request.method = 'PATCH'
+        mock_response.text = 'err'
+        mock_patch.return_value = mock_response
+
+        with pytest.raises(common.IngeniumLibError):
+            procedures.update_procedure_version_release_id(MOCK_BASE_URL, MOCK_PROCEDURE_ID, 2, 'RevB')
