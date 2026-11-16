@@ -239,21 +239,20 @@ class TestGetIngeniumExecutionInfo:
 class TestGetIngeniumExecution:
     """Test class for get_ingenium_execution (info + history)."""
 
+    @patch('executions.ingenium_rest_get_paginated')
     @patch('executions.ingenium_rest_get')
-    def test_get_execution_success(self, mock_get):
-        mock_get.side_effect = [
-            {'execution_id': MOCK_EXECUTION_ID, 'status': 'CLOSED'},
-            [{'elem_id': 'e1'}]
-        ]
+    def test_get_execution_success(self, mock_get, mock_paginated):
+        mock_get.return_value = {'execution_id': MOCK_EXECUTION_ID, 'status': 'CLOSED'}
+        mock_paginated.return_value = [{'elem_id': 'e1'}]
 
         info, history = executions.get_ingenium_execution(MOCK_BASE_URL, MOCK_EXECUTION_ID)
 
         assert info['execution_id'] == MOCK_EXECUTION_ID
         assert history == [{'elem_id': 'e1'}]
-        assert mock_get.call_count == 2
-        assert mock_get.call_args_list[1][0][0] == \
-            f"{MOCK_BASE_URL}{common.as_run_endpoint}/{MOCK_EXECUTION_ID}/history"
-        assert mock_get.call_args_list[1].kwargs['query_params'] == {"limit": 10000}
+        mock_get.assert_called_once_with(
+            f"{MOCK_BASE_URL}{common.as_run_endpoint}/{MOCK_EXECUTION_ID}")
+        mock_paginated.assert_called_once_with(
+            f"{MOCK_BASE_URL}{common.as_run_endpoint}/{MOCK_EXECUTION_ID}/history")
 
 
 class TestGetIngeniumProcedureSections:
