@@ -371,6 +371,42 @@ class TestOutputReport:
         assert wb['Summary'].cell(row=6, column=2).value == '01:30:00'
         wb.close()
 
+    def test_missing_start_time_first_execution(self, tmp_path):
+        """A first execution with an unparseable start and transitions reports Unknown."""
+        out_file = str(tmp_path / "report.xlsx")
+        inputs = MockInputs(output_file=out_file)
+
+        transitions = [{'to_status': 'CLOSED', 'time_updated': '2025-01-01T12:00:00.000Z'}]
+        info = make_execution_info(transitions=transitions)
+        info['time_started'] = ''
+
+        output_report([], [info], inputs, [])
+
+        wb = load_workbook(out_file)
+        assert wb['Summary'].cell(row=5, column=2).value == 'Unknown'
+        assert wb['Summary'].cell(row=6, column=2).value == 'Unknown'
+        wb.close()
+
+    def test_missing_start_time_later_execution(self, tmp_path):
+        """A later execution missing a start time does not reuse the prior start."""
+        out_file = str(tmp_path / "report.xlsx")
+        inputs = MockInputs(output_file=out_file)
+
+        transitions = [{'to_status': 'CLOSED', 'time_updated': '2025-01-01T12:00:00.000Z'}]
+        good = make_execution_info(execution_id='test-ingenium-10001', transitions=transitions)
+        bad = make_execution_info(execution_id='test-ingenium-10002', transitions=transitions)
+        bad['time_started'] = 'not-a-time'
+
+        output_report([], [good, bad], inputs, [])
+
+        wb = load_workbook(out_file)
+        summary = wb['Summary']
+        assert summary.cell(row=5, column=2).value == '02:00:00'
+        assert summary.cell(row=6, column=2).value == '02:00:00'
+        assert summary.cell(row=5, column=3).value == 'Unknown'
+        assert summary.cell(row=6, column=3).value == 'Unknown'
+        wb.close()
+
 
 class TestFormulaInjection:
     """Externally sourced strings must not be written as formulas (CWE-1236)."""

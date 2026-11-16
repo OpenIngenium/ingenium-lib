@@ -527,21 +527,31 @@ def _write_summary_sheet(summary, execution_info, procedures, inputs, formats):
         _write_cell(summary, 1, summary_column, execution['execution_id'], formats['summary_info'])
         _write_cell(summary, 2, summary_column, execution['description'], formats['summary_info'])
 
-        # Convert the Times
+        # Convert the Times (each parsed independently so a missing/unparseable
+        # value does not leave a stale or unbound variable for this execution)
         try:
             dt_time_started = datetime.datetime.strptime(execution['time_started'], '%Y-%m-%dT%H:%M:%S.%fZ')
+        except:
+            dt_time_started = None
+        try:
             dt_time_completed = datetime.datetime.strptime(execution['time_completed'], '%Y-%m-%dT%H:%M:%S.%fZ')
+        except:
+            dt_time_completed = None
+
+        if dt_time_started is not None and dt_time_completed is not None:
             delta = dt_time_completed - dt_time_started
             hours, remainder = divmod(delta.total_seconds(), 3600)
             minutes, seconds = divmod(remainder, 60)
             duration = '{:0>2d}:{:0>2d}:{:0>2d}'.format(int(hours), int(minutes), int(seconds))
-        except:
+        else:
             duration = "Unknown"
 
         # Compute the execution duration
 
-        # If there are no transitions - then the duration = execution_duration
-        if not execution['transitions']:
+        # If there are no transitions or the start time is unavailable - then
+        # the duration = execution_duration (the active run time can not be
+        # computed without a start time)
+        if not execution['transitions'] or dt_time_started is None:
             exec_duration = duration
         # Otherwise we need to step through the transitions adding up the actual run time.
         else:
