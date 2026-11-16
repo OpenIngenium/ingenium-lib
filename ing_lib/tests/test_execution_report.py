@@ -216,6 +216,22 @@ class TestIngestExternalData:
         assert entries[0]['ingenium'] is False
         assert entries[0]['scet'] == '2025-001T09:59:00.000'
 
+    def test_time_filter_excludes_rows(self, tmp_path):
+        """CSV rows outside the requested ERT window are excluded."""
+        csv_file = tmp_path / "external.csv"
+        with open(csv_file, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['2025-001T09:00:00.000', '', '', 'MYSRC', 'EVR', 'EVR-0', 'before', 'seq0'])
+            writer.writerow(['2025-001T10:30:00.000', '', '', 'MYSRC', 'EVR', 'EVR-1', 'inside', 'seq1'])
+            writer.writerow(['2025-001T12:00:00.000', '', '', 'MYSRC', 'EVR', 'EVR-2', 'after', 'seq2'])
+
+        inputs = MockInputs(external_data_files=[str(csv_file)],
+                            begin_time='2025-001T10:00:00', end_time='2025-001T11:00:00')
+        entries = ingest_external_data_sources(inputs)
+
+        assert len(entries) == 1
+        assert entries[0]['id'] == 'EVR-1'
+
     def test_no_files(self):
         inputs = MockInputs(external_data_files=None)
         assert ingest_external_data_sources(inputs) == []

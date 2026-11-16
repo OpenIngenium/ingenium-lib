@@ -141,6 +141,54 @@ def get_input(args=[]):
     return inputs
 
 
+def _get_time_bounds(inputs):
+    """
+    Parse the optional begin/end time filters into datetimes. When a bound is not
+    provided it defaults to the min/max values of datetime so all times are included.
+
+    Parameters
+    ----------
+    inputs
+        Object of inputs
+
+    Returns
+    -------
+    begin_time: datetime
+        Lower bound of the report time window
+    end_time: datetime
+        Upper bound of the report time window
+    """
+    if inputs.begin_time:
+        begin_time = datetime.datetime.strptime(inputs.begin_time, '%Y-%jT%H:%M:%S')
+    else:
+        begin_time = datetime.datetime.min
+    if inputs.end_time:
+        end_time = datetime.datetime.strptime(inputs.end_time, '%Y-%jT%H:%M:%S')
+    else:
+        end_time = datetime.datetime.max
+    return begin_time, end_time
+
+
+def _in_time_window(ert, begin_time, end_time):
+    """
+    Check whether an ERT falls within the report time window.
+
+    Parameters
+    ----------
+    ert: datetime
+        The time to test
+    begin_time: datetime
+        Lower bound of the report time window (exclusive)
+    end_time: datetime
+        Upper bound of the report time window (exclusive)
+
+    Returns
+    -------
+        True when the ert is within the time window
+    """
+    return begin_time < ert < end_time
+
+
 def query_ingenium_execution(inputs):
     """
     This function queries the Ingenium Executions and extracts a variety of information.
@@ -162,14 +210,7 @@ def query_ingenium_execution(inputs):
     """
 
     # If data/time ranges are provided use them, otherwise set the limits to the min/max values of datetime.
-    if inputs.begin_time:
-        begin_time = datetime.datetime.strptime(inputs.begin_time, '%Y-%jT%H:%M:%S')
-    else:
-        begin_time = datetime.datetime.min
-    if inputs.end_time:
-        end_time = datetime.datetime.strptime(inputs.end_time, '%Y-%jT%H:%M:%S')
-    else:
-        end_time = datetime.datetime.max
+    begin_time, end_time = _get_time_bounds(inputs)
 
     report_entries = []
     venues = []
@@ -286,8 +327,8 @@ def query_ingenium_execution(inputs):
 
                     # Apply the time filter. Note that it will include any start that either starts or
                     # ends in the provided time range
-                    if (step_started > begin_time and step_started < end_time) or \
-                            (step_ended > begin_time and step_ended < end_time):
+                    if _in_time_window(step_started, begin_time, end_time) or \
+                            _in_time_window(step_ended, begin_time, end_time):
 
                         report_entries.append(step_start)
                         report_entries.append(step_end)
@@ -316,6 +357,10 @@ def ingest_external_data_sources(inputs):
 
     report_entries = []
 
+    # Use the same time window applied to Ingenium steps so that all report
+    # content is filtered consistently
+    begin_time, end_time = _get_time_bounds(inputs)
+
     if inputs.external_data_files:
         for external_file in inputs.external_data_files:
             logger.info(f"Reading External file: {external_file} for inclusion in the execution report.")
@@ -337,7 +382,8 @@ def ingest_external_data_sources(inputs):
                             logger.warning(f"Unable to parse external data file: {external_file}, row: {row}")
                             logger.warning(f"Traceback: {traceback.format_exc()}")
                             continue
-                        report_entries.append(data)
+                        if _in_time_window(data['ert'], begin_time, end_time):
+                            report_entries.append(data)
             except IOError:
                 logger.warning(f"Unable to open or access {external_file}")
                 logger.warning(f"Traceback: {traceback.format_exc()}")
