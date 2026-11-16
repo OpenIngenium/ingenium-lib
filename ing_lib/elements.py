@@ -125,7 +125,7 @@ class VIDeclareStep(IngeniumStep):
         vis = []
         format_string = ""
         if state == "procedure":
-            vis = self.execution_user_input['vis']
+            vis = self.authoring_user_input['vis']
         elif state == "as-run":
             vis = self.execution_user_input['vis']
         for vi in vis:
