@@ -816,9 +816,11 @@ class TestProjConfigLoadDict:
             assert len(command['arguments']) == 1
 
             argument = command['arguments'][0]
+            assert argument['argument_name'] == 'VERSION'
             assert argument['argument_type'] == 'UINT'
             assert argument['argument_size'] == 1
-            assert argument['argument_description'] == 'VERSION - (Test version arg)'
+            assert argument['default_value'] == '0'
+            assert argument['argument_description'] == 'Test version arg'
         finally:
             os.remove(temp_file)
 
@@ -864,13 +866,21 @@ class TestProjConfigLoadDict:
             arguments_by_index = commands[0]['arguments']
 
             ranged_arg = arguments_by_index[0]
+            assert ranged_arg['argument_name'] == 'RANGED_ARG'
             assert ranged_arg['allowable_ranges'] == [
                 {'min_value': '0', 'max_value': '100'},
                 {'min_value': '200', 'max_value': '300'},
             ]
 
             plain_arg = arguments_by_index[1]
+            assert plain_arg['argument_name'] == 'PLAIN_ARG'
             assert 'allowable_ranges' not in plain_arg
+
+            # Neither the Argument nor its type supplies a default or a
+            # description, so both keys are omitted entirely.
+            for argument in arguments_by_index:
+                assert 'default_value' not in argument
+                assert 'argument_description' not in argument
         finally:
             os.remove(temp_file)
 
@@ -929,8 +939,382 @@ class TestProjConfigLoadDict:
 
             # Each ARG_Type resolved within its own SpaceSystem's ArgumentTypeSet
             assert ssa_arg['argument_type'] == 'UINT'
-            assert ssa_arg['argument_description'] == 'ARG - (SSA arg)'
+            assert ssa_arg['argument_description'] == 'SSA arg'
             assert ssb_arg['argument_type'] == 'FLOAT'
-            assert ssb_arg['argument_description'] == 'ARG - (SSB arg)'
+            assert ssb_arg['argument_description'] == 'SSB arg'
+        finally:
+            os.remove(temp_file)
+
+    def test_parse_xtce_command_dictionary_argument_name_and_default_value(self):
+        """Test argument_name extraction and the Argument-over-ArgumentType
+        precedence for both default_value (initialValue) and
+        argument_description (shortDescription)."""
+        xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+<xtce:SpaceSystem xmlns:xtce="http://www.omg.org/spec/XTCE/20180204" name="TESTSYS">
+  <xtce:CommandMetaData>
+    <xtce:ArgumentTypeSet>
+      <xtce:IntegerArgumentType name="PLAIN_Type" signed="false">
+        <xtce:IntegerDataEncoding sizeInBits="8" encoding="unsigned"/>
+      </xtce:IntegerArgumentType>
+      <xtce:IntegerArgumentType name="TYPE_DEFAULT_Type" initialValue="7" shortDescription="Type level description" signed="false">
+        <xtce:IntegerDataEncoding sizeInBits="8" encoding="unsigned"/>
+      </xtce:IntegerArgumentType>
+    </xtce:ArgumentTypeSet>
+    <xtce:MetaCommandSet>
+      <xtce:MetaCommand name="DO_THING">
+        <xtce:ArgumentList>
+          <xtce:Argument name="ARG_ARGUMENT_DEFAULT" argumentTypeRef="PLAIN_Type" initialValue="1"/>
+          <xtce:Argument name="ARG_TYPE_DEFAULT" argumentTypeRef="TYPE_DEFAULT_Type"/>
+          <xtce:Argument name="ARG_BOTH_DEFAULTS" argumentTypeRef="TYPE_DEFAULT_Type" initialValue="9" shortDescription="Argument level description"/>
+          <xtce:Argument name="ARG_NEITHER" argumentTypeRef="PLAIN_Type"/>
+        </xtce:ArgumentList>
+      </xtce:MetaCommand>
+    </xtce:MetaCommandSet>
+  </xtce:CommandMetaData>
+</xtce:SpaceSystem>
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.xtce', delete=False) as f:
+            f.write(xml_content)
+            temp_file = f.name
+
+        try:
+            commands = parse_xtce_command_dictionary(temp_file)
+            assert len(commands) == 1
+
+            by_name = {a['argument_name']: a for a in commands[0]['arguments']}
+            assert set(by_name) == {
+                'ARG_ARGUMENT_DEFAULT', 'ARG_TYPE_DEFAULT',
+                'ARG_BOTH_DEFAULTS', 'ARG_NEITHER',
+            }
+
+            # initialValue on the Argument only
+            assert by_name['ARG_ARGUMENT_DEFAULT']['default_value'] == '1'
+
+            # initialValue/shortDescription inherited from the ArgumentType
+            assert by_name['ARG_TYPE_DEFAULT']['default_value'] == '7'
+            assert by_name['ARG_TYPE_DEFAULT']['argument_description'] == 'Type level description'
+
+            # Argument wins over the ArgumentType for both fields
+            assert by_name['ARG_BOTH_DEFAULTS']['default_value'] == '9'
+            assert by_name['ARG_BOTH_DEFAULTS']['argument_description'] == 'Argument level description'
+
+            # Neither level supplies a default or description
+            assert 'default_value' not in by_name['ARG_NEITHER']
+            assert 'argument_description' not in by_name['ARG_NEITHER']
+        finally:
+            os.remove(temp_file)
+
+    def test_parse_xtce_channel_dictionary_custom_algorithm_outputs(self):
+        """Test that CustomAlgorithm OutputSet parameters become channels named
+        after the SequenceContainer holding the algorithm's InputSet parameter,
+        and that the raw input parameter's own channel is still emitted."""
+        xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+<xtce:SpaceSystem xmlns:xtce="http://www.omg.org/spec/XTCE/20180204" name="TESTSYS">
+  <xtce:TelemetryMetaData>
+    <xtce:ParameterTypeSet>
+      <xtce:StringParameterType name="RAW_Type" shortDescription="Opaque payload">
+        <xtce:StringDataEncoding sizeInBits="64"/>
+      </xtce:StringParameterType>
+      <xtce:IntegerParameterType name="OUT_A_Type" shortDescription="Output A" signed="false">
+        <xtce:IntegerDataEncoding sizeInBits="16" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="OUT_B_Type" shortDescription="Output B">
+        <xtce:FloatDataEncoding sizeInBits="32" encoding="IEEE754_1985"/>
+      </xtce:FloatParameterType>
+    </xtce:ParameterTypeSet>
+    <xtce:ParameterSet>
+      <xtce:Parameter name="RAW_PAYLOAD" parameterTypeRef="RAW_Type"/>
+      <xtce:Parameter name="OUT_A" parameterTypeRef="OUT_A_Type">
+        <xtce:ParameterProperties dataSource="derived"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="OUT_B" parameterTypeRef="OUT_B_Type">
+        <xtce:ParameterProperties dataSource="derived"/>
+      </xtce:Parameter>
+    </xtce:ParameterSet>
+    <xtce:ContainerSet>
+      <xtce:SequenceContainer name="TEST_PKT" shortDescription="Test packet">
+        <xtce:EntryList>
+          <xtce:ParameterRefEntry parameterRef="RAW_PAYLOAD"/>
+        </xtce:EntryList>
+      </xtce:SequenceContainer>
+    </xtce:ContainerSet>
+    <xtce:AlgorithmSet>
+      <xtce:CustomAlgorithm name="TransformTestPkt">
+        <xtce:InputSet>
+          <xtce:InputParameterInstanceRef parameterRef="RAW_PAYLOAD"/>
+        </xtce:InputSet>
+        <xtce:OutputSet>
+          <xtce:OutputParameterRef parameterRef="OUT_A"/>
+          <xtce:OutputParameterRef parameterRef="OUT_B"/>
+        </xtce:OutputSet>
+      </xtce:CustomAlgorithm>
+    </xtce:AlgorithmSet>
+  </xtce:TelemetryMetaData>
+</xtce:SpaceSystem>
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.xtce', delete=False) as f:
+            f.write(xml_content)
+            temp_file = f.name
+
+        try:
+            channels = parse_xtce_channel_dictionary(temp_file)
+            by_name = {c['channel_name']: c for c in channels}
+
+            assert set(by_name) == {
+                'TESTSYS__TEST_PKT__RAW_PAYLOAD',
+                'TESTSYS__TEST_PKT__OUT_A',
+                'TESTSYS__TEST_PKT__OUT_B',
+            }
+
+            # The raw input channel is still emitted
+            raw = by_name['TESTSYS__TEST_PKT__RAW_PAYLOAD']
+            assert raw['derived'] == 'No'
+
+            out_a = by_name['TESTSYS__TEST_PKT__OUT_A']
+            assert out_a['channel_id'] == 'TESTSYS__TEST_PKT__OUT_A'
+            assert out_a['operations_category'] == 'TESTSYS'
+            assert out_a['type'] == 'unsigned'
+            assert out_a['bit_size'] == 16
+            assert out_a['derived'] == 'Yes'
+            assert out_a['description'] == 'Test packet - Output A'
+
+            out_b = by_name['TESTSYS__TEST_PKT__OUT_B']
+            assert out_b['type'] == 'float'
+            assert out_b['bit_size'] == 32
+            assert out_b['derived'] == 'Yes'
+            assert out_b['description'] == 'Test packet - Output B'
+        finally:
+            os.remove(temp_file)
+
+    def test_parse_xtce_channel_dictionary_array_parameter_type(self):
+        """Test that ArrayParameterType is resolved through arrayTypeRef to its
+        element type, including when the element type is declared later in the
+        ParameterTypeSet, and that a calibrator nested inside the element type's
+        encoding sets eu_present."""
+        xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+<xtce:SpaceSystem xmlns:xtce="http://www.omg.org/spec/XTCE/20180204" name="TESTSYS">
+  <xtce:TelemetryMetaData>
+    <xtce:ParameterTypeSet>
+      <xtce:ArrayParameterType name="READINGS_ArrayType" shortDescription="Array description" arrayTypeRef="READING_Type">
+        <xtce:DimensionList>
+          <xtce:Dimension>
+            <xtce:StartingIndex><xtce:FixedValue>0</xtce:FixedValue></xtce:StartingIndex>
+            <xtce:EndingIndex><xtce:FixedValue>0</xtce:FixedValue></xtce:EndingIndex>
+          </xtce:Dimension>
+        </xtce:DimensionList>
+      </xtce:ArrayParameterType>
+      <xtce:ArrayParameterType name="INHERITED_ArrayType" arrayTypeRef="READING_Type"/>
+      <!-- Element type is declared after the array types that reference it -->
+      <xtce:IntegerParameterType name="READING_Type" shortDescription="Element description" signed="true">
+        <xtce:IntegerDataEncoding sizeInBits="16" encoding="twosComplement">
+          <xtce:DefaultCalibrator>
+            <xtce:PolynomialCalibrator>
+              <xtce:Term coefficient="0.001" exponent="1"/>
+            </xtce:PolynomialCalibrator>
+          </xtce:DefaultCalibrator>
+        </xtce:IntegerDataEncoding>
+      </xtce:IntegerParameterType>
+    </xtce:ParameterTypeSet>
+    <xtce:ParameterSet>
+      <xtce:Parameter name="READINGS" parameterTypeRef="READINGS_ArrayType"/>
+      <xtce:Parameter name="INHERITED" parameterTypeRef="INHERITED_ArrayType"/>
+    </xtce:ParameterSet>
+    <xtce:ContainerSet>
+      <xtce:SequenceContainer name="TEST_PKT">
+        <xtce:EntryList>
+          <xtce:ParameterRefEntry parameterRef="READINGS"/>
+          <xtce:ParameterRefEntry parameterRef="INHERITED"/>
+        </xtce:EntryList>
+      </xtce:SequenceContainer>
+    </xtce:ContainerSet>
+  </xtce:TelemetryMetaData>
+</xtce:SpaceSystem>
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.xtce', delete=False) as f:
+            f.write(xml_content)
+            temp_file = f.name
+
+        try:
+            channels = parse_xtce_channel_dictionary(temp_file)
+            by_name = {c['channel_name']: c for c in channels}
+
+            readings = by_name['TESTSYS__TEST_PKT__READINGS']
+            assert readings['type'] == 'integer'
+            assert readings['bit_size'] == 16
+            # DefaultCalibrator is nested inside IntegerDataEncoding
+            assert readings['eu_present'] == 'Yes'
+            # The array type's own description wins over the element type's
+            assert readings['description'] == 'Array description'
+
+            # An array type without its own description inherits the element's
+            inherited = by_name['TESTSYS__TEST_PKT__INHERITED']
+            assert inherited['type'] == 'integer'
+            assert inherited['bit_size'] == 16
+            assert inherited['description'] == 'Element description'
+        finally:
+            os.remove(temp_file)
+
+    def test_parse_xtce_channel_dictionary_derived_data_source(self):
+        """Test that the channel's derived flag comes from the Parameter's
+        ParameterProperties dataSource attribute."""
+        xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+<xtce:SpaceSystem xmlns:xtce="http://www.omg.org/spec/XTCE/20180204" name="TESTSYS">
+  <xtce:TelemetryMetaData>
+    <xtce:ParameterTypeSet>
+      <xtce:IntegerParameterType name="COUNT_Type" signed="false">
+        <xtce:IntegerDataEncoding sizeInBits="8" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+    </xtce:ParameterTypeSet>
+    <xtce:ParameterSet>
+      <xtce:Parameter name="DERIVED_PARAM" parameterTypeRef="COUNT_Type">
+        <xtce:ParameterProperties dataSource="derived"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="TELEMETERED_PARAM" parameterTypeRef="COUNT_Type">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="UNSPECIFIED_PARAM" parameterTypeRef="COUNT_Type"/>
+    </xtce:ParameterSet>
+    <xtce:ContainerSet>
+      <xtce:SequenceContainer name="TEST_PKT">
+        <xtce:EntryList>
+          <xtce:ParameterRefEntry parameterRef="DERIVED_PARAM"/>
+          <xtce:ParameterRefEntry parameterRef="TELEMETERED_PARAM"/>
+          <xtce:ParameterRefEntry parameterRef="UNSPECIFIED_PARAM"/>
+        </xtce:EntryList>
+      </xtce:SequenceContainer>
+    </xtce:ContainerSet>
+  </xtce:TelemetryMetaData>
+</xtce:SpaceSystem>
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.xtce', delete=False) as f:
+            f.write(xml_content)
+            temp_file = f.name
+
+        try:
+            channels = parse_xtce_channel_dictionary(temp_file)
+            by_name = {c['channel_name']: c for c in channels}
+
+            assert by_name['TESTSYS__TEST_PKT__DERIVED_PARAM']['derived'] == 'Yes'
+            assert by_name['TESTSYS__TEST_PKT__TELEMETERED_PARAM']['derived'] == 'No'
+            assert by_name['TESTSYS__TEST_PKT__UNSPECIFIED_PARAM']['derived'] == 'No'
+        finally:
+            os.remove(temp_file)
+
+    def test_parse_xtce_channel_dictionary_algorithm_output_shared_across_algorithms(self):
+        """Test that an output parameter produced by several algorithms yields
+        one channel per source container rather than being de-duplicated."""
+        xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+<xtce:SpaceSystem xmlns:xtce="http://www.omg.org/spec/XTCE/20180204" name="TESTSYS">
+  <xtce:TelemetryMetaData>
+    <xtce:ParameterTypeSet>
+      <xtce:StringParameterType name="RAW_Type">
+        <xtce:StringDataEncoding sizeInBits="64"/>
+      </xtce:StringParameterType>
+      <xtce:IntegerParameterType name="SHARED_Type" shortDescription="Shared output" signed="false">
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+    </xtce:ParameterTypeSet>
+    <xtce:ParameterSet>
+      <xtce:Parameter name="RAW_ONE" parameterTypeRef="RAW_Type"/>
+      <xtce:Parameter name="RAW_TWO" parameterTypeRef="RAW_Type"/>
+      <xtce:Parameter name="SHARED_OUT" parameterTypeRef="SHARED_Type">
+        <xtce:ParameterProperties dataSource="derived"/>
+      </xtce:Parameter>
+    </xtce:ParameterSet>
+    <xtce:ContainerSet>
+      <xtce:SequenceContainer name="PKT_ONE" shortDescription="Packet one">
+        <xtce:EntryList>
+          <xtce:ParameterRefEntry parameterRef="RAW_ONE"/>
+        </xtce:EntryList>
+      </xtce:SequenceContainer>
+      <xtce:SequenceContainer name="PKT_TWO" shortDescription="Packet two">
+        <xtce:EntryList>
+          <xtce:ParameterRefEntry parameterRef="RAW_TWO"/>
+        </xtce:EntryList>
+      </xtce:SequenceContainer>
+    </xtce:ContainerSet>
+    <xtce:AlgorithmSet>
+      <xtce:CustomAlgorithm name="TransformOne">
+        <xtce:InputSet>
+          <xtce:InputParameterInstanceRef parameterRef="RAW_ONE"/>
+        </xtce:InputSet>
+        <xtce:OutputSet>
+          <xtce:OutputParameterRef parameterRef="SHARED_OUT"/>
+        </xtce:OutputSet>
+      </xtce:CustomAlgorithm>
+      <xtce:CustomAlgorithm name="TransformTwo">
+        <xtce:InputSet>
+          <xtce:InputParameterInstanceRef parameterRef="RAW_TWO"/>
+        </xtce:InputSet>
+        <xtce:OutputSet>
+          <xtce:OutputParameterRef parameterRef="SHARED_OUT"/>
+        </xtce:OutputSet>
+      </xtce:CustomAlgorithm>
+    </xtce:AlgorithmSet>
+  </xtce:TelemetryMetaData>
+</xtce:SpaceSystem>
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.xtce', delete=False) as f:
+            f.write(xml_content)
+            temp_file = f.name
+
+        try:
+            channels = parse_xtce_channel_dictionary(temp_file)
+            by_name = {c['channel_name']: c for c in channels}
+
+            assert 'TESTSYS__PKT_ONE__SHARED_OUT' in by_name
+            assert 'TESTSYS__PKT_TWO__SHARED_OUT' in by_name
+
+            assert by_name['TESTSYS__PKT_ONE__SHARED_OUT']['description'] == 'Packet one - Shared output'
+            assert by_name['TESTSYS__PKT_TWO__SHARED_OUT']['description'] == 'Packet two - Shared output'
+        finally:
+            os.remove(temp_file)
+
+    def test_parse_xtce_channel_dictionary_algorithm_input_not_in_container(self):
+        """Test that when no SequenceContainer references an algorithm's input,
+        its outputs fall back to being named after the algorithm."""
+        xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+<xtce:SpaceSystem xmlns:xtce="http://www.omg.org/spec/XTCE/20180204" name="TESTSYS">
+  <xtce:TelemetryMetaData>
+    <xtce:ParameterTypeSet>
+      <xtce:IntegerParameterType name="VALUE_Type" shortDescription="Chained output" signed="false">
+        <xtce:IntegerDataEncoding sizeInBits="8" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+    </xtce:ParameterTypeSet>
+    <xtce:ParameterSet>
+      <xtce:Parameter name="ORPHAN_INPUT" parameterTypeRef="VALUE_Type"/>
+      <xtce:Parameter name="CHAINED_OUT" parameterTypeRef="VALUE_Type">
+        <xtce:ParameterProperties dataSource="derived"/>
+      </xtce:Parameter>
+    </xtce:ParameterSet>
+    <xtce:AlgorithmSet>
+      <xtce:CustomAlgorithm name="ChainedTransform">
+        <xtce:InputSet>
+          <xtce:InputParameterInstanceRef parameterRef="ORPHAN_INPUT"/>
+        </xtce:InputSet>
+        <xtce:OutputSet>
+          <xtce:OutputParameterRef parameterRef="CHAINED_OUT"/>
+        </xtce:OutputSet>
+      </xtce:CustomAlgorithm>
+    </xtce:AlgorithmSet>
+  </xtce:TelemetryMetaData>
+</xtce:SpaceSystem>
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.xtce', delete=False) as f:
+            f.write(xml_content)
+            temp_file = f.name
+
+        try:
+            channels = parse_xtce_channel_dictionary(temp_file)
+            by_name = {c['channel_name']: c for c in channels}
+
+            assert set(by_name) == {'TESTSYS__ChainedTransform__CHAINED_OUT'}
+
+            channel = by_name['TESTSYS__ChainedTransform__CHAINED_OUT']
+            assert channel['operations_category'] == 'TESTSYS'
+            assert channel['derived'] == 'Yes'
+            assert channel['type'] == 'unsigned'
+            # No container, so the description is the ParameterType's alone
+            assert channel['description'] == 'Chained output'
         finally:
             os.remove(temp_file)

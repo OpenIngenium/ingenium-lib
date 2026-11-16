@@ -115,6 +115,16 @@ def _findall_with_ns(element: ET.Element, path: str, namespaces: Optional[Dict[s
     return [child for child in element if _strip_ns(child.tag) == path]
 
 
+# XTCE calibrator elements that indicate an engineering-unit conversion is present.
+# Both the XTCE 1.2 spelling (ContextCalibratorList) and the variant seen in some
+# dictionaries (ContextCalibrationList) are accepted.
+_EU_CALIBRATOR_TAGS = frozenset([
+    'DefaultCalibrator',
+    'ContextCalibratorList',
+    'ContextCalibrationList',
+])
+
+
 ##################################################### AMPCS Functions ###############################################
 
 def detect_ampcs_type(xml_file: str) -> Optional[str]:
@@ -652,9 +662,15 @@ def parse_xtce_command_dictionary(xml_file: str) -> List[Dict[str, Any]]:
     argument's allowable_ranges as a list of {'min_value', 'max_value'}
     dicts (values taken from minInclusive/minExclusive and
     maxInclusive/maxExclusive, per the Ingenium OpenAPI schema which has no
-    inclusive/exclusive distinction). Each argument's description is built
-    as f"{Argument name} - ({ArgumentType short description})", falling
-    back to just the Argument name if the ArgumentType has no description.
+    inclusive/exclusive distinction).
+
+    Each argument carries:
+      - argument_name: the Argument element's name attribute.
+      - default_value: the Argument element's initialValue, falling back to
+        the referenced ArgumentType's initialValue.
+      - argument_description: the Argument element's own description,
+        falling back to the referenced ArgumentType's description. Omitted
+        entirely when neither provides one.
 
     Args:
         xml_file: Path to XTCE XML file
@@ -769,6 +785,11 @@ def parse_xtce_command_dictionary(xml_file: str) -> List[Dict[str, Any]]:
                             if arg_type_desc:
                                 type_info['argument_description'] = arg_type_desc
 
+                            # Type-level default (overridden by an Argument's own initialValue)
+                            type_initial_value = arg_type.get('initialValue')
+                            if type_initial_value is not None:
+                                type_info['default_value'] = type_initial_value
+
                             type_map[type_name] = type_info
 
             arg_types_by_ss[ss_path] = type_map
@@ -842,42 +863,49 @@ def parse_xtce_command_dictionary(xml_file: str) -> List[Dict[str, Any]]:
                             arg_name = arg_elem.get('name')
                             arg_type_ref = arg_elem.get('argumentTypeRef')
 
-                            if arg_type_ref and arg_type_ref in arg_types:
-                                type_info = arg_types[arg_type_ref]
-                                argument = {
-                                    'argument_type': type_info.get('argument_type', 'STRING'),
-                                    'repeat_arg': 'No'
-                                }
-
-                                if 'argument_size' in type_info:
-                                    argument['argument_size'] = type_info['argument_size']
-
-                                if 'enumerations' in type_info:
-                                    argument['enumerations'] = type_info['enumerations']
-
-                                if 'allowable_ranges' in type_info:
-                                    argument['allowable_ranges'] = type_info['allowable_ranges']
-
-                                # Description: f"{Argument name} - ({ArgumentType short description})",
-                                # falling back to just the Argument name if the ArgumentType has
-                                # no description.
-                                type_description = type_info.get('argument_description')
-                                if type_description:
-                                    argument['argument_description'] = f"{arg_name} - ({type_description})"
-                                else:
-                                    argument['argument_description'] = arg_name
-
-                                arguments.append(argument)
-                            else:
+                            type_info = arg_types.get(arg_type_ref) if arg_type_ref else None
+                            if type_info is None:
                                 logger.warning(
                                     f"Could not resolve argumentTypeRef '{arg_type_ref}' for argument "
                                     f"'{arg_name}' in command '{command_stem}' (SpaceSystem path: {ss_path}); "
                                     f"defaulting to STRING type"
                                 )
-                                arguments.append({
-                                    'argument_type': 'STRING',
-                                    'repeat_arg': 'No'
-                                })
+                                type_info = {}
+
+                            argument = {
+                                'argument_type': type_info.get('argument_type', 'STRING'),
+                                'repeat_arg': 'No'
+                            }
+
+                            if arg_name:
+                                argument['argument_name'] = arg_name
+
+                            if 'argument_size' in type_info:
+                                argument['argument_size'] = type_info['argument_size']
+
+                            if 'enumerations' in type_info:
+                                argument['enumerations'] = type_info['enumerations']
+
+                            if 'allowable_ranges' in type_info:
+                                argument['allowable_ranges'] = type_info['allowable_ranges']
+
+                            # Default value: the Argument's own initialValue wins over the
+                            # referenced ArgumentType's initialValue.
+                            default_value = arg_elem.get('initialValue')
+                            if default_value is None:
+                                default_value = type_info.get('default_value')
+                            if default_value is not None:
+                                argument['default_value'] = default_value
+
+                            # Description: the Argument's own description wins over the
+                            # referenced ArgumentType's; omitted if neither has one.
+                            arg_description = _get_element_description(arg_elem)
+                            if not arg_description:
+                                arg_description = type_info.get('argument_description')
+                            if arg_description:
+                                argument['argument_description'] = arg_description
+
+                            arguments.append(argument)
 
             if arguments:
                 command['arguments'] = arguments
@@ -938,6 +966,68 @@ def _resolve_xtce_ref(ref: str, own_ss_path: str, all_ss_paths: List[str]) -> Op
     return ss_path if ss_path in all_ss_paths else None
 
 
+def _resolve_array_parameter_types(param_types: Dict[str, Dict[str, Any]], ss_leaf_name: str) -> None:
+    """
+    Resolve ArrayParameterType entries to their element type, in place.
+
+    Ingenium has no array concept, so an array channel is described by its
+    element type (the DimensionList is discarded). This runs as a post-pass
+    over a SpaceSystem's whole ParameterTypeSet because an arrayTypeRef may
+    point at a type declared later in the set. Chains of array-of-array are
+    followed, with a guard against cyclic references.
+
+    Args:
+        param_types: ParameterType registry for one SpaceSystem, keyed by name
+        ss_leaf_name: SpaceSystem leaf name, used for log messages
+    """
+    inherited_keys = ('type', 'bit_size', 'enumerations', 'eu_present')
+    resolved = set()
+
+    def resolve(type_name, chain):
+        type_info = param_types.get(type_name)
+        if type_info is None:
+            return None
+
+        array_type_ref = type_info.get('array_type_ref')
+        if array_type_ref is None or type_name in resolved:
+            return type_info
+
+        if type_name in chain:
+            logger.warning(
+                f"Cyclic arrayTypeRef chain detected at ParameterType '{type_name}' "
+                f"(SpaceSystem: {ss_leaf_name}); defaulting to string type"
+            )
+            type_info.pop('array_type_ref', None)
+            resolved.add(type_name)
+            return type_info
+
+        element_name = array_type_ref.rstrip('/').split('/')[-1]
+        element_info = resolve(element_name, chain | {type_name})
+
+        type_info.pop('array_type_ref', None)
+        resolved.add(type_name)
+
+        if element_info is None:
+            logger.warning(
+                f"Could not resolve arrayTypeRef '{array_type_ref}' for ArrayParameterType "
+                f"'{type_name}' (SpaceSystem: {ss_leaf_name}); defaulting to string type"
+            )
+            return type_info
+
+        for key in inherited_keys:
+            if key in element_info:
+                type_info[key] = element_info[key]
+
+        # The array type's own description wins when it has one.
+        if 'description' not in type_info and 'description' in element_info:
+            type_info['description'] = element_info['description']
+
+        return type_info
+
+    for type_name in list(param_types):
+        resolve(type_name, frozenset())
+
+
 def parse_xtce_channel_dictionary(xml_file: str) -> List[Dict[str, Any]]:
     """
     Parse XTCE telemetry/channel dictionary and convert to OpenAPI format.
@@ -951,6 +1041,20 @@ def parse_xtce_channel_dictionary(xml_file: str) -> List[Dict[str, Any]]:
     SpaceSystem that owns the SequenceContainer). The description is built as
     f"{SequenceContainer short description} - {ParameterType short description}",
     falling back to whichever of the two is available if only one is present.
+
+    CustomAlgorithm elements in an AlgorithmSet additionally produce channels
+    for their OutputSet parameters, which are otherwise unreachable because
+    they never appear in a SequenceContainer. Each output is named using the
+    SequenceContainer that holds the algorithm's InputSet parameter, i.e.
+    f"{SpaceSystem_leaf_name}__{SequenceContainer_name}__{OutputParameterRef}".
+    Outputs shared by several algorithms therefore yield one channel per
+    source container rather than being de-duplicated. The input parameter's
+    own channel is still emitted.
+
+    ArrayParameterType is resolved through arrayTypeRef to its element type
+    for type/bit_size/enumerations/eu_present, since Ingenium has no array
+    concept (the DimensionList is discarded). The channel's `derived` flag
+    comes from the Parameter's ParameterProperties dataSource attribute.
 
     Args:
         xml_file: Path to XTCE XML file
@@ -971,14 +1075,18 @@ def parse_xtce_channel_dictionary(xml_file: str) -> List[Dict[str, Any]]:
         # Phase A: collect per-SpaceSystem registries of parameter types and parameters,
         # plus the SequenceContainers owned by each SpaceSystem.
         param_types_by_ss: Dict[str, Dict[str, Dict[str, Any]]] = {}
-        parameters_by_ss: Dict[str, Dict[str, str]] = {}
+        # parameters_by_ss[ss_path][param_name] -> {'type_ref', 'data_source'}
+        parameters_by_ss: Dict[str, Dict[str, Dict[str, Any]]] = {}
         # containers_by_ss[ss_path] -> list of (leaf_ss_name, SequenceContainer element)
         containers_by_ss: Dict[str, List[tuple]] = {}
+        # algorithms_by_ss[ss_path] -> list of {'name', 'inputs', 'outputs'}
+        algorithms_by_ss: Dict[str, List[Dict[str, Any]]] = {}
 
         def collect_registries(space_system, ss_path, ss_leaf_name):
             param_types: Dict[str, Dict[str, Any]] = {}
-            parameters: Dict[str, str] = {}
+            parameters: Dict[str, Dict[str, Any]] = {}
             containers: List[ET.Element] = []
+            algorithms: List[Dict[str, Any]] = []
 
             for tlm_meta in space_system:
                 if _strip_ns(tlm_meta.tag) != 'TelemetryMetaData':
@@ -1026,6 +1134,12 @@ def parse_xtce_channel_dictionary(xml_file: str) -> List[Dict[str, Any]]:
                                                     enums.append(enum_obj)
                                 if enums:
                                     type_info['enumerations'] = enums
+                            elif type_local_tag == 'ArrayParameterType':
+                                # Ingenium has no array concept; the channel takes its
+                                # element type. Resolved in a post-pass below because the
+                                # element type may be declared later in the ParameterTypeSet.
+                                type_info['type'] = 'string'
+                                type_info['array_type_ref'] = param_type.get('arrayTypeRef')
                             else:
                                 type_info['type'] = 'string'
 
@@ -1034,6 +1148,12 @@ def parse_xtce_channel_dictionary(xml_file: str) -> List[Dict[str, Any]]:
                             for encoding in param_type:
                                 encoding_tag = _strip_ns(encoding.tag)
                                 if 'Encoding' in encoding_tag:
+                                    # Calibrators are normally nested inside the encoding
+                                    # element rather than directly under the ParameterType.
+                                    for encoding_child in encoding:
+                                        if _strip_ns(encoding_child.tag) in _EU_CALIBRATOR_TAGS:
+                                            eu_present = True
+
                                     size_in_bits = encoding.get('sizeInBits')
                                     if not size_in_bits:
                                         for encoding_child in encoding:
@@ -1064,7 +1184,7 @@ def parse_xtce_channel_dictionary(xml_file: str) -> List[Dict[str, Any]]:
                                             type_info['bit_size'] = int(size_in_bits)
                                         except ValueError:
                                             pass
-                                elif encoding_tag in ['DefaultCalibrator', 'ContextCalibrationList']:
+                                elif encoding_tag in _EU_CALIBRATOR_TAGS:
                                     eu_present = True
 
                             type_info['eu_present'] = 'Yes' if eu_present else 'No'
@@ -1082,18 +1202,65 @@ def parse_xtce_channel_dictionary(xml_file: str) -> List[Dict[str, Any]]:
                                 param_name = param.get('name')
                                 if not param_name:
                                     continue
-                                param_type_ref = param.get('parameterTypeRef')
-                                parameters[param_name] = param_type_ref
+
+                                data_source = None
+                                for param_child in param:
+                                    if _strip_ns(param_child.tag) == 'ParameterProperties':
+                                        data_source = param_child.get('dataSource')
+                                        break
+
+                                parameters[param_name] = {
+                                    'type_ref': param.get('parameterTypeRef'),
+                                    'data_source': data_source,
+                                }
 
                     elif local_tag == 'ContainerSet':
                         for container in child:
                             if _strip_ns(container.tag) == 'SequenceContainer':
                                 containers.append(container)
 
+                    elif local_tag == 'AlgorithmSet':
+                        for algorithm in child:
+                            algorithm_tag = _strip_ns(algorithm.tag)
+                            if algorithm_tag != 'CustomAlgorithm':
+                                logger.debug(
+                                    f"Skipping unsupported algorithm kind '{algorithm_tag}' "
+                                    f"in SpaceSystem '{ss_leaf_name}'"
+                                )
+                                continue
+
+                            inputs: List[str] = []
+                            outputs: List[str] = []
+                            for algorithm_child in algorithm:
+                                algorithm_child_tag = _strip_ns(algorithm_child.tag)
+                                if algorithm_child_tag == 'InputSet':
+                                    for ref in algorithm_child:
+                                        if _strip_ns(ref.tag) == 'InputParameterInstanceRef':
+                                            parameter_ref = ref.get('parameterRef')
+                                            if parameter_ref:
+                                                inputs.append(parameter_ref)
+                                elif algorithm_child_tag == 'OutputSet':
+                                    for ref in algorithm_child:
+                                        if _strip_ns(ref.tag) == 'OutputParameterRef':
+                                            parameter_ref = ref.get('parameterRef')
+                                            if parameter_ref:
+                                                outputs.append(parameter_ref)
+
+                            if outputs:
+                                algorithms.append({
+                                    'name': algorithm.get('name', ''),
+                                    'inputs': inputs,
+                                    'outputs': outputs,
+                                })
+
+            _resolve_array_parameter_types(param_types, ss_leaf_name)
+
             param_types_by_ss[ss_path] = param_types
             parameters_by_ss[ss_path] = parameters
             if containers:
                 containers_by_ss[ss_path] = [(ss_leaf_name, c) for c in containers]
+            if algorithms:
+                algorithms_by_ss[ss_path] = algorithms
 
             # Recurse into nested SpaceSystems
             for child in space_system:
@@ -1107,10 +1274,108 @@ def parse_xtce_channel_dictionary(xml_file: str) -> List[Dict[str, Any]]:
 
         all_ss_paths = list(param_types_by_ss.keys())
 
-        # Phase B: walk SequenceContainers per SpaceSystem, resolving each
-        # ParameterRefEntry to its owning SpaceSystem/Parameter/ParameterType.
         seen_channel_names = set()
 
+        def build_channel(parameter_ref, ref_scope_ss_path, name_prefix, ops_category,
+                          container_description, context):
+            """
+            Resolve a parameterRef to a channel dict, or None if unresolvable.
+
+            Shared by the SequenceContainer walk (Phase B) and the
+            CustomAlgorithm OutputSet walk (Phase C).
+            """
+            owning_ss_path = _resolve_xtce_ref(parameter_ref, ref_scope_ss_path, all_ss_paths)
+            bare_param_name = parameter_ref.rstrip('/').split('/')[-1]
+
+            if owning_ss_path is None:
+                logger.warning(
+                    f"Could not resolve owning SpaceSystem for parameterRef "
+                    f"'{parameter_ref}' in {context}; skipping"
+                )
+                return None
+
+            param_info = parameters_by_ss.get(owning_ss_path, {}).get(bare_param_name)
+            if param_info is None:
+                logger.warning(
+                    f"parameterRef '{parameter_ref}' not found in ParameterSet "
+                    f"(resolved SpaceSystem scope: '{owning_ss_path}'); skipping "
+                    f"entry in {context}"
+                )
+                return None
+
+            param_type_ref = param_info.get('type_ref')
+            type_info = param_types_by_ss.get(owning_ss_path, {}).get(param_type_ref)
+
+            channel_name = f"{name_prefix}__{bare_param_name}"
+            if channel_name in seen_channel_names:
+                logger.warning(f"Duplicate channel_name generated: {channel_name}")
+            seen_channel_names.add(channel_name)
+
+            channel = {
+                'channel_name': channel_name,
+                'channel_id': channel_name,
+                'derived': 'Yes' if param_info.get('data_source') == 'derived' else 'No',
+                'operations_category': ops_category
+            }
+
+            if type_info:
+                channel['type'] = type_info.get('type', 'string')
+
+                if 'bit_size' in type_info:
+                    channel['bit_size'] = type_info['bit_size']
+
+                if 'enumerations' in type_info:
+                    channel['enumerations'] = type_info['enumerations']
+
+                channel['eu_present'] = type_info.get('eu_present', 'No')
+
+                type_description = type_info.get('description')
+                if container_description and type_description:
+                    channel['description'] = f"{container_description} - {type_description}"
+                elif container_description:
+                    channel['description'] = container_description
+                elif type_description:
+                    channel['description'] = type_description
+            else:
+                logger.warning(
+                    f"parameterTypeRef '{param_type_ref}' not found for parameter "
+                    f"'{bare_param_name}' (SpaceSystem scope: '{owning_ss_path}'); "
+                    f"defaulting to string type"
+                )
+                channel['type'] = 'string'
+                channel['eu_present'] = 'No'
+                if container_description:
+                    channel['description'] = container_description
+
+            return channel
+
+        # Index of which SequenceContainers carry a given parameter, keyed by
+        # (owning SpaceSystem path, bare parameter name). Phase C uses this to
+        # name an algorithm's outputs after the container holding its input.
+        containers_by_param: Dict[tuple, List[tuple]] = {}
+        for ss_path, container_entries in containers_by_ss.items():
+            for ss_leaf_name, container in container_entries:
+                if not container.get('name'):
+                    continue
+                for child in container:
+                    if _strip_ns(child.tag) != 'EntryList':
+                        continue
+                    for entry in child:
+                        if _strip_ns(entry.tag) != 'ParameterRefEntry':
+                            continue
+                        parameter_ref = entry.get('parameterRef')
+                        if not parameter_ref:
+                            continue
+                        owning_ss_path = _resolve_xtce_ref(parameter_ref, ss_path, all_ss_paths)
+                        if owning_ss_path is None:
+                            continue
+                        bare_param_name = parameter_ref.rstrip('/').split('/')[-1]
+                        containers_by_param.setdefault(
+                            (owning_ss_path, bare_param_name), []
+                        ).append((ss_path, ss_leaf_name, container))
+
+        # Phase B: walk SequenceContainers per SpaceSystem, resolving each
+        # ParameterRefEntry to its owning SpaceSystem/Parameter/ParameterType.
         for ss_path, container_entries in containers_by_ss.items():
             for ss_leaf_name, container in container_entries:
                 container_name = container.get('name')
@@ -1144,73 +1409,78 @@ def parse_xtce_channel_dictionary(xml_file: str) -> List[Dict[str, Any]]:
                     if not parameter_ref:
                         continue
 
-                    owning_ss_path = _resolve_xtce_ref(parameter_ref, ss_path, all_ss_paths)
-                    bare_param_name = parameter_ref.rstrip('/').split('/')[-1]
+                    channel = build_channel(
+                        parameter_ref,
+                        ss_path,
+                        f"{ss_leaf_name}__{container_name}",
+                        ss_leaf_name,
+                        container_description,
+                        f"container '{container_name}' (SpaceSystem: {ss_leaf_name})"
+                    )
+                    if channel is not None:
+                        channels.append(channel)
 
+        # Phase C: CustomAlgorithm OutputSet parameters never appear in a
+        # SequenceContainer, so emit a channel for each one, named after the
+        # container that carries the algorithm's InputSet parameter.
+        for ss_path, algorithms in algorithms_by_ss.items():
+            for algorithm in algorithms:
+                algorithm_name = algorithm['name']
+
+                # Collect the source containers for this algorithm's inputs,
+                # de-duplicated while preserving order.
+                source_containers = []
+                seen_container_ids = set()
+                for input_ref in algorithm['inputs']:
+                    owning_ss_path = _resolve_xtce_ref(input_ref, ss_path, all_ss_paths)
                     if owning_ss_path is None:
-                        logger.warning(
-                            f"Could not resolve owning SpaceSystem for parameterRef "
-                            f"'{parameter_ref}' in container '{container_name}' "
-                            f"(SpaceSystem: {ss_leaf_name}); skipping"
-                        )
                         continue
+                    bare_input_name = input_ref.rstrip('/').split('/')[-1]
+                    for entry in containers_by_param.get((owning_ss_path, bare_input_name), []):
+                        if id(entry[2]) not in seen_container_ids:
+                            seen_container_ids.add(id(entry[2]))
+                            source_containers.append(entry)
 
-                    parameters = parameters_by_ss.get(owning_ss_path, {})
-                    param_type_ref = parameters.get(bare_param_name)
+                if not source_containers:
+                    # No container carries the input; fall back to naming the
+                    # outputs after the algorithm itself.
+                    ss_leaf_name = ss_path.rstrip('/').split('/')[-1]
+                    logger.warning(
+                        f"No SequenceContainer references the InputSet of CustomAlgorithm "
+                        f"'{algorithm_name}' (SpaceSystem: {ss_leaf_name}); naming its "
+                        f"outputs after the algorithm instead"
+                    )
+                    source_containers = [(ss_path, ss_leaf_name, None)]
 
-                    if param_type_ref is None:
-                        logger.warning(
-                            f"parameterRef '{parameter_ref}' not found in ParameterSet "
-                            f"(resolved SpaceSystem scope: '{owning_ss_path}'); skipping "
-                            f"entry in container '{container_name}' (SpaceSystem: {ss_leaf_name})"
+                # Output refs are scoped to the SpaceSystem declaring the algorithm,
+                # not to the one owning the source container.
+                for _, ss_leaf_name, container in source_containers:
+                    if container is not None:
+                        name_prefix = f"{ss_leaf_name}__{container.get('name')}"
+                        container_description = _get_element_description(container)
+                        context = (
+                            f"CustomAlgorithm '{algorithm_name}' output for container "
+                            f"'{container.get('name')}' (SpaceSystem: {ss_leaf_name})"
                         )
-                        continue
-
-                    param_types = param_types_by_ss.get(owning_ss_path, {})
-                    type_info = param_types.get(param_type_ref)
-
-                    channel_name = f"{ss_leaf_name}__{container_name}__{bare_param_name}"
-                    if channel_name in seen_channel_names:
-                        logger.warning(f"Duplicate channel_name generated: {channel_name}")
-                    seen_channel_names.add(channel_name)
-
-                    channel = {
-                        'channel_name': channel_name,
-                        'channel_id': channel_name,
-                        'derived': 'No',
-                        'operations_category': ss_leaf_name
-                    }
-
-                    if type_info:
-                        channel['type'] = type_info.get('type', 'string')
-
-                        if 'bit_size' in type_info:
-                            channel['bit_size'] = type_info['bit_size']
-
-                        if 'enumerations' in type_info:
-                            channel['enumerations'] = type_info['enumerations']
-
-                        channel['eu_present'] = type_info.get('eu_present', 'No')
-
-                        type_description = type_info.get('description')
-                        if container_description and type_description:
-                            channel['description'] = f"{container_description} - {type_description}"
-                        elif container_description:
-                            channel['description'] = container_description
-                        elif type_description:
-                            channel['description'] = type_description
                     else:
-                        logger.warning(
-                            f"parameterTypeRef '{param_type_ref}' not found for parameter "
-                            f"'{bare_param_name}' (SpaceSystem scope: '{owning_ss_path}'); "
-                            f"defaulting to string type"
+                        name_prefix = f"{ss_leaf_name}__{algorithm_name}"
+                        container_description = None
+                        context = (
+                            f"CustomAlgorithm '{algorithm_name}' output "
+                            f"(SpaceSystem: {ss_leaf_name})"
                         )
-                        channel['type'] = 'string'
-                        channel['eu_present'] = 'No'
-                        if container_description:
-                            channel['description'] = container_description
 
-                    channels.append(channel)
+                    for output_ref in algorithm['outputs']:
+                        channel = build_channel(
+                            output_ref,
+                            ss_path,
+                            name_prefix,
+                            ss_leaf_name,
+                            container_description,
+                            context
+                        )
+                        if channel is not None:
+                            channels.append(channel)
 
     except ET.ParseError as e:
         logger.error(f"Failed to parse XTCE channel dictionary {xml_file}: {e}")
