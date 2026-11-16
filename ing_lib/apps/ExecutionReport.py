@@ -459,6 +459,11 @@ def _write_cell(sheet, row, col, value, cell_format):
     """
     font, fill, alignment, border = cell_format
     cell = sheet.cell(row=row, column=col, value=value)
+    if isinstance(value, str):
+        # Force string cells so externally sourced content (e.g. CSV fields,
+        # execution descriptions) starting with '=' is stored as literal text
+        # rather than inferred as a formula (CWE-1236).
+        cell.data_type = 's'
     cell.font = font
     cell.fill = fill
     cell.alignment = alignment

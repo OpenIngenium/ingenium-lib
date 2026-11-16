@@ -370,3 +370,60 @@ class TestOutputReport:
         wb = load_workbook(out_file)
         assert wb['Summary'].cell(row=6, column=2).value == '01:30:00'
         wb.close()
+
+
+class TestFormulaInjection:
+    """Externally sourced strings must not be written as formulas (CWE-1236)."""
+
+    def test_csv_fields_with_equals_stay_literal(self, tmp_path):
+        """CSV fields starting with '=' remain strings after save and reload."""
+        csv_file = tmp_path / "external.csv"
+        with open(csv_file, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['2025-001T10:00:00.000', '2025-001T09:59:00.000', '123.45',
+                             'MYSRC', '=EVR', '=1+1', '=cmd|"/c calc"!A1', 'seq1'])
+
+        out_file = str(tmp_path / "report.xlsx")
+        inputs = MockInputs(external_data_files=[str(csv_file)], output_file=out_file)
+        entries = ingest_external_data_sources(inputs)
+        assert len(entries) == 1
+
+        output_report(entries, [make_execution_info()], inputs, [])
+
+        wb = load_workbook(out_file)
+        ws = wb['Execution_Report_1']
+        for col, expected in [(5, '=EVR'), (7, '=1+1'), (8, '=cmd|"/c calc"!A1')]:
+            cell = ws.cell(row=2, column=col)
+            assert cell.data_type == 's'
+            assert cell.value == expected
+        wb.close()
+
+    def test_execution_description_with_equals_stays_literal(self, tmp_path):
+        """An execution description starting with '=' remains a string cell."""
+        out_file = str(tmp_path / "report.xlsx")
+        inputs = MockInputs(output_file=out_file)
+
+        info = make_execution_info()
+        info['description'] = '=HYPERLINK("http://example.com")'
+        output_report([], [info], inputs, [])
+
+        wb = load_workbook(out_file)
+        cell = wb['Summary'].cell(row=2, column=2)
+        assert cell.data_type == 's'
+        assert cell.value == '=HYPERLINK("http://example.com")'
+        wb.close()
+
+    def test_numeric_sclk_stays_numeric(self, tmp_path):
+        """Numeric values are still written as numeric cells."""
+        out_file = str(tmp_path / "report.xlsx")
+        inputs = MockInputs(output_file=out_file)
+
+        entry = make_report_entry()
+        entry['sclk'] = '123.45'
+        output_report([entry], [make_execution_info()], inputs, [])
+
+        wb = load_workbook(out_file)
+        cell = wb['Execution_Report_1'].cell(row=2, column=3)
+        assert cell.data_type == 'n'
+        assert cell.value == 123.45
+        wb.close()

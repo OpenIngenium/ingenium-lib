@@ -147,3 +147,25 @@ class TestBuildReport:
             build_report(SAMPLE_PROC_VERS, inputs)
 
         assert "Unable to save" in str(exc_info.value)
+
+    def test_build_report_formula_injection(self, tmp_path):
+        """Procedure fields starting with '=' remain string cells (CWE-1236)."""
+        import copy
+        proc_vers = copy.deepcopy(SAMPLE_PROC_VERS)
+        proc_vers[0]['procedure']['title'] = '=HYPERLINK("http://example.com")'
+        proc_vers[0]['version']['institutional_release_id'] = '=1+1'
+
+        out_file = tmp_path / "report.xlsx"
+        inputs = MockInputs(str(out_file))
+
+        build_report(proc_vers, inputs)
+
+        wb = load_workbook(str(out_file))
+        ws = wb['Procedure Version Report']
+        title_cell = ws.cell(row=2, column=2)
+        assert title_cell.data_type == 's'
+        assert title_cell.value == '=HYPERLINK("http://example.com")'
+        release_cell = ws.cell(row=2, column=8)
+        assert release_cell.data_type == 's'
+        assert release_cell.value == '=1+1'
+        wb.close()
