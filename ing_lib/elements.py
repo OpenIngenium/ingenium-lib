@@ -173,120 +173,6 @@ class VIStatusStep(IngeniumStep):
 
         self.print_format = format_string.rstrip()
 
-
-class GetConfigStep(IngeniumStep):
-
-    def __init__(self, data, state):
-        """
-        This class refines the IngeniumStep class to specifically parse the GET_CONFIG step
-
-        Parameters
-        ----------
-        data
-            Ingenium Step Object
-        state
-            Whether to parse the procedure version ('procedure') or the executed version ('as-run')
-        """
-        # Invoke the parent element
-        super().__init__(data)
-
-        format_string = 'Get configurations for the following elements on the venue: \n'
-        if state == "procedure":
-            if self.authoring_user_input['get_all']:
-                format_string = format_string + "All Elements"
-            else:
-                venue_config_items = self.authoring_user_input['entries']
-                for vc in venue_config_items:
-                    string = "%s \n" % vc['config_elem_name']
-                    format_string = format_string + string
-        elif state == 'as-run':
-            if self.execution_user_input['get_all']:
-                format_string = format_string + "All Elements \n"
-            venue_config_items = self.results['entries']
-            for vc in venue_config_items:
-                string = "Name: %s Type: %s Status: %s Serial: %s\n" \
-                         % (vc['config_elem_name'], vc['type'], vc['status'], vc['serial'])
-                format_string = format_string + string
-
-        self.print_format = format_string.rstrip()
-
-
-class UpdateConfigStep(IngeniumStep):
-    def __init__(self, data, state):
-        """
-        This class refines the IngeniumStep class to specifically parse the UPDATE_CONFIG step
-
-        Parameters
-        ----------
-        data
-            Ingenium Step Object
-        state
-            Whether to parse the procedure version ('procedure') or the executed version ('as-run')
-        """
-        # Invoke the parent element
-        super().__init__(data)
-
-        format_string = "Update venue configuration for the following elements: \n"
-
-        if state == 'procedure':
-            config_items = self.authoring_user_input['entries']
-            serial = 'serial'
-        elif state == 'as-run':
-            config_items = self.results['entries']
-            serial = 'serial_number'
-
-        for config_item in config_items:
-            string = "Element: %s, Type: %s, Status: %s, Serial: %s, Notes: %s \n" % (config_item['config_elem_name'],
-                                                                                      config_item['type'],
-                                                                                      config_item['status'],
-                                                                                      config_item['serial'],
-                                                                                      config_item['notes'],)
-            format_string = format_string + string
-
-        self.print_format = format_string.rstrip()
-
-
-class CheckConfigStep(IngeniumStep):
-    def __init__(self, data, state):
-        """
-        This class refines the IngeniumStep class to specifically parse the CHECK_CONFIG step
-
-        Parameters
-        ----------
-        data
-            Ingenium Step Object
-        state
-            Whether to parse the procedure version ('procedure') or the executed version ('as-run')
-        """
-
-        # Invoke the parent element
-        super().__init__(data)
-
-        format_string = "Checking venue configuration for the following elements: \n"
-
-        if state == 'procedure':
-            config_items = self.authoring_user_input['entries']
-            for config_item in config_items:
-                string = "%s %s \n" % (config_item['config_elem_name'],
-                                       VerificationCondition(config_item['field_name'],
-                                                             config_item['verification_condition'],
-                                                             [config_item['verification_value']]).printformat)
-                format_string = format_string + string
-        elif state == 'as-run':
-            config_items = self.results['entries']
-            for config_item in config_items:
-                string = "%s %s Results: %s Status: %s \n" % (config_item['config_elem_name'],
-                                                              VerificationCondition(
-                                                                  config_item['field_name'],
-                                                                  config_item['verification_condition'],
-                                                                  [config_item['verification_value']]).printformat,
-                                                              config_item['actual_value'],
-                                                              config_item['verification_status'])
-                format_string = format_string + string
-
-        self.print_format = format_string.rstrip()
-
-
 class VerificationCondition:
     def __init__(self, value, condition, verification_values):
         """
@@ -1243,14 +1129,8 @@ def IngeniumStepParser(step, state):
                 step_data = VIDeclareStep(step, state)
             elif step_data.step_type == 'VERIFICATION_ITEM_STATUS':
                 step_data = VIStatusStep(step, state)
-            elif step_data.step_type == 'VENUE_CONFIG_GET':
-                step_data = GetConfigStep(step, state)
             elif step_data.step_type == 'VENUE_CONFIG_MANUAL':
                 step_data = ManualConfig(step, state)
-            elif step_data.step_type == 'VENUE_CONFIG_UPDATE':
-                step_data = UpdateConfigStep(step, state)
-            elif step_data.step_type == 'VENUE_CONFIG_CHECK':
-                step_data = CheckConfigStep(step, state)
             elif step_data.step_type == 'VERIFY_EHA':
                 step_data = VerifyEhaStep(step, state)
             elif step_data.step_type == 'BUS_1553':
