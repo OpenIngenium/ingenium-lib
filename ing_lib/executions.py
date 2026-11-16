@@ -77,7 +77,7 @@ def get_ingenium_execution(server, execution_id):
     # Get the As-Run Contents
     endpoint = f"{server}{as_run_endpoint}/{execution_id}/history"
 
-    as_run_data = ingenium_rest_get_paginated(endpoint)
+    as_run_data = ingenium_rest_get(endpoint, query_params={"limit": 10000})
 
     return as_run_info, as_run_data
 
