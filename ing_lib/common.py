@@ -221,14 +221,19 @@ def ingenium_rest_get_paginated(endpoint, query_params={}):
             logger.error(msg)
             raise IngeniumLibError(msg)
 
-        total = int(header['x-total-count'])
+        total_header = header.get('x-total-count')
 
-        if total <= limit + offset:
-            query_complete = True
+        if total_header is not None:
+            query_complete = int(total_header) <= limit + offset
         else:
+            query_complete = len(data) < limit
+
+        if not query_complete:
             offset = offset + _INITIAL_LIMIT
 
         return_data = return_data + data
+        
+        logger.debug(f"Retrieved {len(return_data)} of {total_header} records so far")
 
     return return_data
 
