@@ -220,7 +220,16 @@ def write_palette_excel(excel_path, palette_info):
     try:
         # Create a new workbook
         workbook = Workbook()
-        
+
+        def write_cell(ws, row, col, value):
+            cell = ws.cell(row=row, column=col, value=value)
+            if isinstance(value, str):
+                # Force string cells so externally sourced palette content
+                # starting with '=' is stored as literal text rather than
+                # inferred as a formula (CWE-1236).
+                cell.data_type = 's'
+            return cell
+
         # Remove the default sheet
         if 'Sheet' in workbook.sheetnames:
             workbook.remove(workbook['Sheet'])
@@ -240,22 +249,22 @@ def write_palette_excel(excel_path, palette_info):
                 
                 # Write headers
                 for col_idx, header in enumerate(headers, 1):
-                    built_in_ws.cell(row=1, column=col_idx, value=header)
-                
+                    write_cell(built_in_ws, 1, col_idx, header)
+
                 # Write data
                 for row_idx, step in enumerate(built_in_steps, 2):
                     if isinstance(step, dict):
                         for col_idx, header in enumerate(headers, 1):
                             value = step.get(header, '')
-                            built_in_ws.cell(row=row_idx, column=col_idx, value=value)
-                
+                            write_cell(built_in_ws, row_idx, col_idx, value)
+
                 logger.info(f"Wrote {len(built_in_steps)} built-in steps to Excel")
             else:
-                built_in_ws.cell(row=1, column=1, value="No built-in steps found")
+                write_cell(built_in_ws, 1, 1, "No built-in steps found")
         else:
             # Create empty sheet with message
             built_in_ws = workbook.create_sheet('Built-in Steps')
-            built_in_ws.cell(row=1, column=1, value="No built-in steps data provided")
+            write_cell(built_in_ws, 1, 1, "No built-in steps data provided")
         
         # Write custom steps worksheet
         custom_ws = workbook.create_sheet('Custom Steps')
@@ -272,21 +281,21 @@ def write_palette_excel(excel_path, palette_info):
                 
                 # Write headers
                 for col_idx, header in enumerate(headers, 1):
-                    custom_ws.cell(row=1, column=col_idx, value=header)
-                
+                    write_cell(custom_ws, 1, col_idx, header)
+
                 # Write data
                 for row_idx, step in enumerate(custom_steps, 2):
                     if isinstance(step, dict):
                         for col_idx, header in enumerate(headers, 1):
                             value = step.get(header, '')
-                            custom_ws.cell(row=row_idx, column=col_idx, value=value)
-                
+                            write_cell(custom_ws, row_idx, col_idx, value)
+
                 logger.info(f"Wrote {len(custom_steps)} custom steps to Excel")
         else:
             # Write default headers even when no custom steps data provided
             default_headers = ['step_id','step_hash', 'step_path', 'palette_category', 'step_display_name']
             for col_idx, header in enumerate(default_headers, 1):
-                custom_ws.cell(row=1, column=col_idx, value=header)
+                write_cell(custom_ws, 1, col_idx, header)
             logger.info("Created custom steps worksheet with default headers")
         
         # Save the workbook

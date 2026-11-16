@@ -109,6 +109,11 @@ def build_report(output, inputs):
 
     def write_cell(row, col, value, font, fill, alignment):
         cell = worksheet.cell(row=row, column=col, value=value)
+        if isinstance(value, str):
+            # Force string cells so externally sourced content (e.g. procedure
+            # titles) starting with '=' is stored as literal text rather than
+            # inferred as a formula (CWE-1236).
+            cell.data_type = 's'
         cell.font = font
         cell.fill = fill
         cell.alignment = alignment

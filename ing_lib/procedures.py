@@ -10,7 +10,7 @@ Authors:
 ##################################################################### Imports
 import requests
 from ing_lib.common import _auth_header,procedure_endpoint,get_ssl_verify
-from ing_lib.common import IngeniumLibError,response_handler,ingenium_rest_get_paginated
+from ing_lib.common import IngeniumLibError,response_handler,ingenium_rest_get,ingenium_rest_get_paginated
 from ing_lib.logs import get_logger
 
 ##################################################### Functions ######################################################
@@ -204,3 +204,173 @@ def import_procedure_versions(server, source_file):
         msg = f"Response not completed successfully to {endpoint}"
         logger.error(msg)
         raise IngeniumLibError(msg)
+
+
+def get_ingenium_procedure(server, procedure, version):
+    """
+    This function queries Ingenium for a procedure / version and returns the procedure summary
+    and detail information.
+
+    Parameters
+    ----------
+    server: str
+        Ingenium Server (e.g. https://ingenium-example.com) without a trailing slash
+
+    procedure: str
+        Ingenium Procedure ID
+
+    version: str
+        Ingenium Procedure Version
+
+    Returns
+    -------
+    procedure_info: dict
+        JSON object containing top level procedure information
+    procedure_data: list
+        JSON object containing all steps in the procedure
+    """
+
+    # Get the Procedure Information (top level)
+    endpoint = f"{server}{procedure_endpoint}/{procedure}"
+
+    msg = f"Querying Ingenium Procedure: {procedure}, version: {version} from: {server}"
+    logger.info(msg)
+
+    procedure_info = ingenium_rest_get(endpoint)
+
+    # Get the Procedure Contents for the given version
+    endpoint = f"{server}{procedure_endpoint}/{procedure}/versions/{version}/elements/"
+
+    procedure_data = ingenium_rest_get_paginated(endpoint)
+
+    return procedure_info, procedure_data
+
+
+def get_procedure_version_info(server, procedure, version):
+    """
+    This function queries the Ingenium Server for the information on version (for a given procedure)
+
+    Parameters
+    ----------
+    server: str
+        Ingenium Server (e.g. https://ingenium-example.com) without a trailing slash
+
+    procedure: str
+        Ingenium Procedure ID
+
+    version: str
+        Ingenium Procedure Version
+
+    Returns
+    -------
+    procedure_version_info: dict
+        JSON object containing the procedure version information
+    """
+
+    endpoint = f"{server}{procedure_endpoint}/{procedure}/versions/{version}"
+
+    msg = f"Querying Ingenium Procedures from: {server} for: {procedure}"
+    logger.info(msg)
+
+    procedure_version_info = ingenium_rest_get(endpoint)
+
+    return procedure_version_info
+
+
+def update_procedure_version_status(server, procedure_id, version_num, status):
+    """
+    This function will modify a procedure version's status
+
+        - SUBMIT
+        - APPROVE
+        - RELEASE
+        - OBSOLETE
+        - UNSUBMIT
+        - UNAPPROVE
+        - UNRELEASE
+        - UNOBSOLETE
+
+    Parameters
+    ----------
+    server: str
+        Ingenium Server (e.g. https://ingenium-example.com) without a trailing slash
+
+    procedure_id: str
+        Ingenium procedure id
+
+    version_num: int
+        Ingenium procedure version
+
+    status: str
+        Procedure version status
+
+    Returns
+    -------
+    data: dict
+        Dictionary of the json response
+    """
+
+    endpoint = f"{server}{procedure_endpoint}/{procedure_id}/versions/{version_num}/status"
+
+    payload = {'action': status}
+
+    try:
+        res = requests.post(endpoint, headers=_auth_header(), verify=get_ssl_verify(), json=payload)
+    except requests.ConnectionError:
+        msg = f"Failed to communicate with: {server}"
+        logger.error(msg)
+        raise IngeniumLibError(msg)
+
+    if response_handler(res):
+        data = res.json()
+    else:
+        msg = f"Response not completed successfully to {endpoint}"
+        logger.error(msg)
+        raise IngeniumLibError(msg)
+
+    return data
+
+
+def update_procedure_version_release_id(server, procedure_id, version_num, revision):
+    """
+    This function updates a procedure version's release id or revision.
+
+    Parameters
+    ----------
+    server: str
+        Ingenium Server (e.g. https://ingenium-example.com) without a trailing slash
+
+    procedure_id: str
+        Ingenium procedure id
+
+    version_num: int
+        Ingenium procedure version
+
+    revision: str
+        Procedure version release id/revision
+
+    Returns
+    -------
+    data: dict
+        Dictionary of the json response
+    """
+
+    endpoint = f"{server}{procedure_endpoint}/{procedure_id}/versions/{version_num}"
+
+    payload = {'institutional_release_id': revision}
+
+    try:
+        res = requests.patch(endpoint, headers=_auth_header(), verify=get_ssl_verify(), json=payload)
+    except requests.ConnectionError:
+        msg = f"Failed to communicate with: {server}"
+        logger.error(msg)
+        raise IngeniumLibError(msg)
+
+    if response_handler(res):
+        data = res.json()
+    else:
+        msg = f"Response not completed successfully to {endpoint}"
+        logger.error(msg)
+        raise IngeniumLibError(msg)
+
+    return data

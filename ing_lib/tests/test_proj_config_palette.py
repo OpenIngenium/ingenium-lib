@@ -11,9 +11,10 @@ from unittest.mock import patch, MagicMock, mock_open
 import tempfile
 
 try:
-    from openpyxl import Workbook
+    from openpyxl import Workbook, load_workbook
 except ImportError:
     Workbook = None
+    load_workbook = None
 
 # Import the module under test
 from apps import ProjConfigPalette
@@ -208,6 +209,25 @@ class TestProjConfigPalette:
         
         with pytest.raises(common.IngeniumLibError, match=r"Error writing Excel file:"):
             ProjConfigPalette.write_palette_excel('test.xlsx', {})
+
+    def test_write_palette_excel_formula_injection(self, tmp_path):
+        """Palette values starting with '=' remain string cells (CWE-1236)."""
+        out_file = tmp_path / "palette.xlsx"
+        palette_info = {
+            'built_in': [{'step_display_name': '=HYPERLINK("http://example.com")'}],
+            'custom': [{'step_id': 'c1', 'step_display_name': '=cmd|"/c calc"!A1'}]
+        }
+
+        ProjConfigPalette.write_palette_excel(str(out_file), palette_info)
+
+        wb = load_workbook(str(out_file))
+        built_in_cell = wb['Built-in Steps'].cell(row=2, column=1)
+        assert built_in_cell.data_type == 's'
+        assert built_in_cell.value == '=HYPERLINK("http://example.com")'
+        custom_cell = wb['Custom Steps'].cell(row=2, column=1)
+        assert custom_cell.data_type == 's'
+        assert custom_cell.value == '=cmd|"/c calc"!A1'
+        wb.close()
 
     def test_diff_palette_info_no_differences(self):
         """Test diff palette info with no differences."""

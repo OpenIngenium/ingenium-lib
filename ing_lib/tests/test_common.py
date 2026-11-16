@@ -314,6 +314,31 @@ class TestCommon:
         assert call_args.kwargs['params']['offset'] == 0
 
     @patch('requests.Session.get')
+    def test_ingenium_rest_get_paginated_no_total_count(self, mock_get):
+        """Test paginated call for endpoints that omit the x-total-count header."""
+        full_page = MagicMock()
+        full_page.status_code = 200
+        full_page.json.return_value = [{"item": i} for i in range(1000)]
+        full_page.headers = {}
+
+        last_page = MagicMock()
+        last_page.status_code = 200
+        last_page.json.return_value = [{"item": 1000}]
+        last_page.headers = {}
+
+        mock_get.side_effect = [full_page, last_page]
+
+        common.set_token("test_token")
+        common.set_ssl_verify(True)
+        common.set_refresh_time(datetime.datetime.now(datetime.timezone.utc))
+
+        result = common.ingenium_rest_get_paginated(MOCK_API_ENDPOINT)
+
+        assert len(result) == 1001
+        assert mock_get.call_count == 2
+        assert mock_get.call_args_list[1].kwargs['params']['offset'] == 1000
+
+    @patch('requests.Session.get')
     def test_authenticate_success(self, mock_get):
         """Test successful authenticate call."""
         # Mock successful authentication response

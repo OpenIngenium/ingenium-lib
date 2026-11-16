@@ -373,3 +373,22 @@ class TestOutputVnVReport:
             output_vnv_report(self.build_report_info(), '/nonexistent_dir/report.xlsx', 'SYS')
 
         assert "Unable to save" in str(exc_info.value)
+
+    def test_formula_injection_fields_stay_literal(self, tmp_path):
+        """Externally sourced strings starting with '=' remain string cells (CWE-1236)."""
+        report = self.build_report_info()
+        report['description'] = '=HYPERLINK("http://example.com")'
+        report['vis'][0]['vi_name'] = '=1+1'
+        out_file = tmp_path / "vnv_report.xlsx"
+
+        output_vnv_report(report, str(out_file), 'SYS')
+
+        wb = load_workbook(str(out_file))
+        ws = wb['Verification Report']
+        desc_cell = ws.cell(row=5, column=2)
+        assert desc_cell.data_type == 's'
+        assert desc_cell.value == '=HYPERLINK("http://example.com")'
+        vi_name_cell = ws.cell(row=13, column=3)
+        assert vi_name_cell.data_type == 's'
+        assert vi_name_cell.value == '=1+1'
+        wb.close()

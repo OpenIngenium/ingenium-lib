@@ -1025,3 +1025,237 @@ def delete_custom_palette(server, step_id):
         msg = f"Response not completed successfully to {endpoint}"
         logger.error(msg)
         raise IngeniumLibError(msg)
+
+def get_dict_vi(server, vi_id, api_version='v3'):
+    """
+    Queries Ingenium dictionary service to get a VI by vi_id.
+
+    Parameters
+    ----------
+    server: str
+        Ingenium Server (e.g. https://ingenium-example.com) without a trailing slash
+
+    vi_id: str
+        VI ID to query
+
+    api_version: str
+        Currently supports v3 and v4
+
+    Returns
+    -------
+        dict of VI definition. None if not found
+    """
+
+    vis = get_vnv_vis(server, query={'vi_id': vi_id}, api_version=api_version)
+
+    vi_found = None
+    for vi in vis:
+        # the query may return multiple vis.
+        # for example, query for "vi_id=123" may include 123, 1234, etc.
+        if vi['vi_id'] == vi_id:
+            vi_found = vi
+            break
+
+    return vi_found
+
+
+def get_dict_eha(server, flight_sse, dictionary_version, channel_id=None, eha_name=None, api_version='v3'):
+    """
+    Queries Ingenium dictionary service to get an EHA channel
+
+    Parameters
+    ----------
+    server: str
+        Ingenium Server (e.g. https://ingenium-example.com) without a trailing slash
+
+    flight_sse: str
+        flight or sse
+
+    dictionary_version: str
+        dictionary version
+
+    channel_id: str
+        channel id to query (optional)
+
+    eha_name: str
+        eha name to query (optional)
+
+    api_version: str
+        Currently supports v3 and v4
+
+    Returns
+    -------
+        dict of EHA definition. None if not found
+    """
+
+    params = {}
+    if channel_id:
+        params['channel_id'] = channel_id
+    if eha_name:
+        params['eha_name'] = eha_name
+
+    # get_dictionary maps 'channels' to 'ehas' for v3 of the API
+    ehas = get_dictionary(server, dictionary_version, flight_sse, 'channels', query=params,
+                          api_version=api_version)
+
+    eha_found = None
+    for eha in ehas:
+        # the query may return multiple ehas. Find the exact match.
+        if channel_id and eha_name:
+            if eha['channel_id'] == channel_id and eha['channel_name'] == eha_name:
+                eha_found = eha
+                break
+        elif channel_id:
+            if eha['channel_id'] == channel_id:
+                eha_found = eha
+                break
+        elif eha_name:
+            if eha['channel_name'] == eha_name:
+                eha_found = eha
+                break
+        else:
+            eha_found = eha
+            break
+
+    return eha_found
+
+
+def get_dict_evr(server, flight_sse, dictionary_version, evr_id=None, evr_name=None, api_version='v3'):
+    """
+    Queries Ingenium dictionary service to get an EVR
+
+    Parameters
+    ----------
+    server: str
+        Ingenium Server (e.g. https://ingenium-example.com) without a trailing slash
+
+    flight_sse: str
+        flight or sse
+
+    dictionary_version: str
+        dictionary version
+
+    evr_id: str
+        evr id to query (optional)
+
+    evr_name: str
+        evr name to query (optional)
+
+    api_version: str
+        Currently supports v3 and v4
+
+    Returns
+    -------
+        dict of EVR definition. None if not found
+    """
+
+    params = {}
+    if evr_id:
+        params['evr_id'] = evr_id
+    if evr_name:
+        params['evr_name'] = evr_name
+
+    evrs = get_dictionary(server, dictionary_version, flight_sse, 'evrs', query=params,
+                          api_version=api_version)
+
+    evr_found = None
+    for evr in evrs:
+        # the query may return multiple evrs. Find the exact match.
+        if evr_id and evr_name:
+            if evr['evr_id'] == evr_id and evr['evr_name'] == evr_name:
+                evr_found = evr
+                break
+        elif evr_id:
+            if evr['evr_id'] == evr_id:
+                evr_found = evr
+                break
+        elif evr_name:
+            if evr['evr_name'] == evr_name:
+                evr_found = evr
+                break
+        else:
+            evr_found = evr
+            break
+
+    return evr_found
+
+
+def get_dict_command(server, flight_sse, dictionary_version, command_stem, api_version='v3'):
+    """
+    Queries Ingenium dictionary service to get a command
+
+    Parameters
+    ----------
+    server: str
+        Ingenium Server (e.g. https://ingenium-example.com) without a trailing slash
+
+    flight_sse: str
+        flight or sse
+
+    dictionary_version: str
+        dictionary version
+
+    command_stem: str
+        command stem
+
+    api_version: str
+        Currently supports v3 and v4
+
+    Returns
+    -------
+        dict of command definition. None if not found
+    """
+
+    cmds = get_dictionary(server, dictionary_version, flight_sse, 'cmds',
+                          query={'command_stem': command_stem}, api_version=api_version)
+
+    cmd_found = None
+    for cmd in cmds:
+        # the query may return multiple cmds. Find the exact match.
+        if cmd['command_stem'] == command_stem:
+            cmd_found = cmd
+            break
+
+    return cmd_found
+
+
+def get_dict_1553_var(server, mil1553_name, api_version='v3'):
+    """
+    Queries Ingenium dictionary service to get a 1553 var
+
+    Parameters
+    ----------
+    server: str
+        Ingenium Server (e.g. https://ingenium-example.com) without a trailing slash
+
+    mil1553_name: str
+        1553 variable to query
+
+    api_version: str
+        Currently supports v3 and v4
+
+    Returns
+    -------
+        dict of 1553 variable definition. None if not found
+    """
+
+    endpoint = f'{server}{dictionary_endpoint}{api_version}/mil1553'
+
+    res = requests.get(endpoint, headers=_auth_header(), params={'mil1553_name': mil1553_name},
+                       verify=get_ssl_verify())
+
+    if response_handler(res):
+        mil1553_vars = res.json()
+    else:
+        msg = f"Response not completed successfully to {endpoint}"
+        logger.error(msg)
+        raise IngeniumLibError(msg)
+
+    mil1553_var_found = None
+    for mil1553_var in mil1553_vars:
+        # the query may return multiple mil1553 vars. Find the exact match.
+        if mil1553_var['mil1553_name'] == mil1553_name:
+            mil1553_var_found = mil1553_var
+            break
+
+    return mil1553_var_found

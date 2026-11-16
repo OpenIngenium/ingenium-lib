@@ -48,6 +48,7 @@ migrate-procedures = "ing_lib.apps.MigrateProcedures:main"
 migrate-executions = "ing_lib.apps.MigrateExecutions:main"
 procedure-report = "ing_lib.apps.ProcedureReport:main"
 vnv-report = "ing_lib.apps.VnVReport:main"
+execution-report = "ing_lib.apps.ExecutionReport:main"
 
 [tool.setuptools.dynamic]
 version = {attr = "ing_lib.__version__"}

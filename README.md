@@ -15,8 +15,9 @@ The repository is organized as follows:
     -   `logs.py`: Logging configuration using `RichHandler` for console output.
     -   `project_config.py`: Core library for querying and managing Ingenium Project Configurations, including command/telemetry dictionaries, V&V information, and custom scripts.
     -   `venue.py`: Client library for the Ingenium venue management API, including venue and venue group operations.
-    -   `procedures.py`: Client library for Ingenium procedures, including procedure version queries and version export/import.
-    -   `executions.py`: Client library for Ingenium executions (as-runs), including execution queries and export/import.
+    -   `procedures.py`: Client library for Ingenium procedures, including procedure/version queries, version export/import, and version status/release-id updates.
+    -   `executions.py`: Client library for Ingenium executions (as-runs), including execution info/history queries, recursive procedure-section traversal, execution export/import, and halt/mode/status controls.
+    -   `elements.py`: Element classes that translate Ingenium procedure and as-run JSON into `print_format` text strings (used by reports), via `IngeniumStepParser` and `parse_ingenium_steps`.
     -   `steps.py`: Helper classes and functions for creating Ingenium steps, including bit-mask operations and `ReturnOn` enums.
     -   `apps/`: Command-line applications for managing Project Configurations and migrations:
         -   `ProjConfigBackup.py`: Backs up project configuration content from an Ingenium server.
@@ -28,6 +29,7 @@ The repository is organized as follows:
         -   `MigrateProcedures.py`: Migrates procedures/procedure versions from one Ingenium server to another.
         -   `MigrateExecutions.py`: Migrates executions (as-runs) from one Ingenium server to another.
         -   `ProcedureReport.py`: Generates an XLSX report of all procedures/versions on an Ingenium server.
+        -   `ExecutionReport.py`: Generates an XLSX report of Ingenium executions (as-runs), including recursive child execution collection and optional external CSV data merging.
         -   `VnVReport.py`: Generates an XLSX report of the Verification Items addressed in an Ingenium execution and their status.
     -   `utils/`: Standalone utility scripts.
         -   `ProjConfigV3toV4Convert.py`: Converts verification item (VI) JSON data from API v3 format to v4 format.
@@ -78,6 +80,7 @@ Installing the package also installs the following commands:
 -   `migrate-procedures`: Migrate procedures/procedure versions between Ingenium servers.
 -   `migrate-executions`: Migrate executions (as-runs) between Ingenium servers.
 -   `procedure-report`: Generate an XLSX report of all procedures/versions on an Ingenium server.
+-   `execution-report`: Generate an XLSX report of Ingenium executions (as-runs).
 -   `vnv-report`: Generate an XLSX report of the Verification Items addressed in an Ingenium execution and their status.
 
 Run any command with `--help` for usage details.
