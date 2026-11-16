@@ -1107,6 +1107,33 @@ class WaitDataProductStep(IngeniumStep):
         self.print_format = format_string.rstrip()
 
 
+class UnknownStep(IngeniumStep):
+    def __init__(self, data, state):
+        """
+        This class provides a fallback for executable steps whose step_type is not
+        recognized, so that reports can still read their meta_data and print_format
+
+        Parameters
+        ----------
+        data
+            Ingenium Step Object
+        state
+            Whether to parse the procedure version ('procedure') or the executed version ('as-run')
+        """
+
+        # Invoke the base element directly since an unrecognized step may not
+        # carry the expected execution or user input blocks
+        IngeniumElement.__init__(self, data)
+
+        self.authoring_user_input = data.get('authoring_user_input') or {}
+        self.execution_user_input = data.get('execution_user_input') or {}
+        execution = data.get('execution') or {}
+        self.meta_data = execution.get('meta_data') or {}
+        self.results = execution.get('results') or {}
+
+        self.print_format = "Unsupported step type: %s" % self.step_type
+
+
 def IngeniumStepParser(step, state):
     """
     This function determines the step type of a paticular step and then creates the appropriate object
@@ -1169,6 +1196,10 @@ def IngeniumStepParser(step, state):
                 step_data = WaitDataProductStep(step, state)
             elif step_data.step_type == 'TIME_REFERENCE':
                 step_data = TimeReferenceStep(step, state)
+            else:
+                logger.warning(f"Unrecognized step_type '{step_data.step_type}' on step "
+                               f"{step_data.number} '{step_data.title}' - using generic step")
+                step_data = UnknownStep(step, state)
 
     return step_data
 

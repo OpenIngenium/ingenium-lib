@@ -276,7 +276,7 @@ def query_ingenium_execution(inputs):
             if step.elem_type == 'STEP':
 
                 # If the status is NONE the step did not execute (so it can be skipped)
-                if step.meta_data['status'] in EXECUTED_STATUSES and step.step_type != 'VERIFICATION_ITEM_STATUS':
+                if step.meta_data.get('status') in EXECUTED_STATUSES and step.step_type != 'VERIFICATION_ITEM_STATUS':
 
                     # If the step is not part of a procedure use the execution id
                     if step.procedure_id == '':
@@ -543,10 +543,11 @@ def _write_summary_sheet(summary, execution_info, procedures, inputs, formats):
             start_time = dt_time_started
             total_exec_time = 0
             for transition in execution['transitions']:
-                if transition['to_status'] in ['SUSPENDED', 'CLOSED']:
+                if transition['to_status'] in ['SUSPENDED', 'CLOSED'] and start_time is not None:
                     end_time = datetime.datetime.strptime(transition['time_updated'], '%Y-%m-%dT%H:%M:%S.%fZ')
                     total_exec_time = total_exec_time + (end_time - start_time).total_seconds()
-                if transition['to_status'] in ['IDLE']:
+                    start_time = None
+                if transition['to_status'] in ['IDLE'] and start_time is None:
                     start_time = datetime.datetime.strptime(transition['time_updated'], '%Y-%m-%dT%H:%M:%S.%fZ')
 
             hours, remainder = divmod(total_exec_time, 3600)

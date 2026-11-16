@@ -152,11 +152,23 @@ class TestStepParsers:
         assert isinstance(step, elements.ProcedureStep)
         assert 'Reference Procedure: Ref Proc (proc-1) Version: 2 R4S: True' == step.print_format
 
-    def test_unknown_step_returns_base(self):
+    def test_unknown_step_returns_fallback(self):
         data = make_element(step_type='MADE_UP_TYPE')
         step = elements.IngeniumStepParser(data, 'as-run')
-        # An unmapped step_type returns the base IngeniumElement
-        assert type(step) is elements.IngeniumElement
+        # An unmapped step_type falls back to a generic IngeniumStep so that
+        # reports can still read meta_data and print_format
+        assert isinstance(step, elements.UnknownStep)
+        assert isinstance(step, elements.IngeniumStep)
+        assert step.meta_data['status'] == 'PASS'
+        assert 'MADE_UP_TYPE' in step.print_format
+
+    def test_unknown_step_missing_execution(self):
+        data = make_element(step_type='MADE_UP_TYPE')
+        data.pop('execution')
+        step = elements.IngeniumStepParser(data, 'as-run')
+        assert isinstance(step, elements.UnknownStep)
+        assert step.meta_data == {}
+        assert step.results == {}
 
 
 class TestCustomScriptStep:

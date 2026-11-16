@@ -31,13 +31,13 @@ class MockInputs:
         self.debug = debug
 
 
-def make_execution_info(execution_id='test-ingenium-10001'):
+def make_execution_info(execution_id='test-ingenium-10001', transitions=None):
     return {
         'execution_id': execution_id,
         'description': 'Test execution',
         'time_started': '2025-01-01T10:00:00.000Z',
         'time_completed': '2025-01-01T12:00:00.000Z',
-        'transitions': [],
+        'transitions': transitions if transitions is not None else [],
         'venue_name': 'TESTBED',
         'test_conductors': ['testuser'],
         'version': '1.0.0',
@@ -197,6 +197,22 @@ class TestQueryIngeniumExecution:
         infos, entries, procs = query_ingenium_execution(inputs)
         assert entries == []
 
+    @patch('apps.ExecutionReport.get_ingenium_execution')
+    @patch('apps.ExecutionReport.get_procedure_section_infos')
+    @patch('apps.ExecutionReport.parse_ingenium_steps')
+    def test_step_missing_status_skipped(self, mock_parse, mock_sections, mock_get_exec):
+        """Steps whose meta_data has no status are skipped rather than crashing."""
+        inputs = MockInputs()
+        mock_sections.side_effect = lambda *a, **k: None
+        mock_get_exec.return_value = (make_execution_info(), [])
+
+        step = make_step_mock()
+        step.meta_data = {}
+        mock_parse.return_value = [step]
+
+        infos, entries, procs = query_ingenium_execution(inputs)
+        assert entries == []
+
 
 class TestIngestExternalData:
     """Test ingest_external_data_sources."""
@@ -324,4 +340,33 @@ class TestOutputReport:
         output_report([], [make_execution_info()], inputs, [])
         wb = load_workbook(out_file)
         assert 'Summary' in wb.sheetnames
+        wb.close()
+
+    def test_exec_duration_suspend_then_close(self, tmp_path):
+        """Suspension followed directly by closure counts only the active hour."""
+        out_file = str(tmp_path / "report.xlsx")
+        inputs = MockInputs(output_file=out_file)
+
+        transitions = [{'to_status': 'SUSPENDED', 'time_updated': '2025-01-01T11:00:00.000Z'},
+                       {'to_status': 'CLOSED', 'time_updated': '2025-01-01T12:00:00.000Z'}]
+
+        output_report([], [make_execution_info(transitions=transitions)], inputs, [])
+
+        wb = load_workbook(out_file)
+        assert wb['Summary'].cell(row=6, column=2).value == '01:00:00'
+        wb.close()
+
+    def test_exec_duration_suspend_resume_close(self, tmp_path):
+        """Suspended time is excluded when execution resumes before closure."""
+        out_file = str(tmp_path / "report.xlsx")
+        inputs = MockInputs(output_file=out_file)
+
+        transitions = [{'to_status': 'SUSPENDED', 'time_updated': '2025-01-01T11:00:00.000Z'},
+                       {'to_status': 'IDLE', 'time_updated': '2025-01-01T11:30:00.000Z'},
+                       {'to_status': 'CLOSED', 'time_updated': '2025-01-01T12:00:00.000Z'}]
+
+        output_report([], [make_execution_info(transitions=transitions)], inputs, [])
+
+        wb = load_workbook(out_file)
+        assert wb['Summary'].cell(row=6, column=2).value == '01:30:00'
         wb.close()
