@@ -125,7 +125,7 @@ class VIDeclareStep(IngeniumStep):
         vis = []
         format_string = ""
         if state == "procedure":
-            vis = self.execution_user_input['vis']
+            vis = self.authoring_user_input['vis']
         elif state == "as-run":
             vis = self.execution_user_input['vis']
         for vi in vis:
@@ -885,7 +885,7 @@ class EnvironmentalStep(IngeniumStep):
                                                    inputs['humidity']['verify_on']),
                                                    inputs['humidity']['verification_condition'],
                                                    inputs['humidity']['verification_values']).printformat,
-                                                   inputs['temperature']['verification_status'])
+                                                   inputs['humidity']['verification_status'])
             format_string = format_string + string
 
         self.print_format = format_string.rstrip()
