@@ -286,8 +286,7 @@ def query_ingenium_execution(inputs):
 
                     # Apply the time filter. Note that it will include any start that either starts or
                     # ends in the provided time range
-                    if (step_started > begin_time and step_started < end_time) or \
-                            (step_ended > begin_time and step_ended < end_time):
+                    if step_started <= end_time and step_ended >= begin_time:
 
                         report_entries.append(step_start)
                         report_entries.append(step_end)
