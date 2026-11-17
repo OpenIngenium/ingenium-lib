@@ -1277,12 +1277,13 @@ def parse_xtce_channel_dictionary(xml_file: str) -> List[Dict[str, Any]]:
         seen_channel_names = set()
 
         def build_channel(parameter_ref, ref_scope_ss_path, name_prefix, ops_category,
-                          container_description, context):
+                          container_description, context, force_derived=False):
             """
             Resolve a parameterRef to a channel dict, or None if unresolvable.
 
             Shared by the SequenceContainer walk (Phase B) and the
-            CustomAlgorithm OutputSet walk (Phase C).
+            CustomAlgorithm OutputSet walk (Phase C), which passes force_derived
+            because algorithm outputs are always derived.
             """
             owning_ss_path = _resolve_xtce_ref(parameter_ref, ref_scope_ss_path, all_ss_paths)
             bare_param_name = parameter_ref.rstrip('/').split('/')[-1]
@@ -1314,7 +1315,7 @@ def parse_xtce_channel_dictionary(xml_file: str) -> List[Dict[str, Any]]:
             channel = {
                 'channel_name': channel_name,
                 'channel_id': channel_name,
-                'derived': 'Yes' if param_info.get('data_source') == 'derived' else 'No',
+                'derived': 'Yes' if force_derived or param_info.get('data_source') == 'derived' else 'No',
                 'operations_category': ops_category
             }
 
@@ -1477,7 +1478,8 @@ def parse_xtce_channel_dictionary(xml_file: str) -> List[Dict[str, Any]]:
                             name_prefix,
                             ss_leaf_name,
                             container_description,
-                            context
+                            context,
+                            force_derived=True
                         )
                         if channel is not None:
                             channels.append(channel)
