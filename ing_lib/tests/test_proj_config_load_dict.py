@@ -1200,6 +1200,58 @@ class TestProjConfigLoadDict:
         finally:
             os.remove(temp_file)
 
+    def test_parse_xtce_channel_dictionary_algorithm_output_without_data_source(self):
+        """Test that CustomAlgorithm outputs are derived without a data source."""
+        xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+<xtce:SpaceSystem xmlns:xtce="http://www.omg.org/spec/XTCE/20180204" name="TESTSYS">
+  <xtce:TelemetryMetaData>
+    <xtce:ParameterTypeSet>
+      <xtce:IntegerParameterType name="VALUE_Type" signed="false">
+        <xtce:IntegerDataEncoding sizeInBits="8" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+    </xtce:ParameterTypeSet>
+    <xtce:ParameterSet>
+      <xtce:Parameter name="RAW" parameterTypeRef="VALUE_Type"/>
+      <xtce:Parameter name="CALIBRATED" parameterTypeRef="VALUE_Type"/>
+      <xtce:Parameter name="TELEM_OUT" parameterTypeRef="VALUE_Type">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+    </xtce:ParameterSet>
+    <xtce:ContainerSet>
+      <xtce:SequenceContainer name="PKT">
+        <xtce:EntryList>
+          <xtce:ParameterRefEntry parameterRef="RAW"/>
+        </xtce:EntryList>
+      </xtce:SequenceContainer>
+    </xtce:ContainerSet>
+    <xtce:AlgorithmSet>
+      <xtce:CustomAlgorithm name="Calibrate">
+        <xtce:InputSet>
+          <xtce:InputParameterInstanceRef parameterRef="RAW"/>
+        </xtce:InputSet>
+        <xtce:OutputSet>
+          <xtce:OutputParameterRef parameterRef="CALIBRATED"/>
+          <xtce:OutputParameterRef parameterRef="TELEM_OUT"/>
+        </xtce:OutputSet>
+      </xtce:CustomAlgorithm>
+    </xtce:AlgorithmSet>
+  </xtce:TelemetryMetaData>
+</xtce:SpaceSystem>
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.xtce', delete=False) as f:
+            f.write(xml_content)
+            temp_file = f.name
+
+        try:
+            channels = parse_xtce_channel_dictionary(temp_file)
+            by_name = {c['channel_name']: c for c in channels}
+
+            assert by_name['TESTSYS__PKT__RAW']['derived'] == 'No'
+            assert by_name['TESTSYS__PKT__CALIBRATED']['derived'] == 'Yes'
+            assert by_name['TESTSYS__PKT__TELEM_OUT']['derived'] == 'Yes'
+        finally:
+            os.remove(temp_file)
+
     def test_parse_xtce_channel_dictionary_algorithm_output_shared_across_algorithms(self):
         """Test that an output parameter produced by several algorithms yields
         one channel per source container rather than being de-duplicated."""
